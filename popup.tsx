@@ -1,51 +1,24 @@
 import { useState, useEffect } from "react"
 import { useSettings } from "~hooks/useSettings"
-import { getVoices, type Voice } from "~services/elevenlabs"
-import { Loader2, RefreshCw, Power } from "lucide-react"
+
+import { Power, Coffee } from "lucide-react"
 import { cn } from "~lib/utils"
 import "./style.css"
 
 function IndexPopup() {
-  const { apiKey, voiceId, showOverlay, setApiKey, setVoiceId, setShowOverlay } = useSettings()
+  const { apiKey, showOverlay, isElevenLabsEnabled, setApiKey, setShowOverlay, setIsElevenLabsEnabled } = useSettings()
   const [localKey, setLocalKey] = useState("")
   const [isSaved, setIsSaved] = useState(false)
-
-  // Voice State
-  const [voices, setVoices] = useState<Voice[]>([])
-  const [isLoadingVoices, setIsLoadingVoices] = useState(false)
-  const [voiceError, setVoiceError] = useState<string | null>(null)
 
   useEffect(() => {
     if (apiKey) setLocalKey(apiKey)
   }, [apiKey])
 
-  // Fetch voices when API key is set or saved
-  useEffect(() => {
-    if (apiKey) {
-      fetchVoices(apiKey)
-    }
-  }, [apiKey])
-
-  const fetchVoices = async (key: string) => {
-    setIsLoadingVoices(true)
-    setVoiceError(null)
-    try {
-      const fetched = await getVoices(key)
-      setVoices(fetched)
-    } catch (e: any) {
-      setVoiceError("Failed to load voices. Check API Key.")
-      console.error(e)
-    } finally {
-      setIsLoadingVoices(false)
-    }
-  }
 
   const handleSave = () => {
     setApiKey(localKey)
     setIsSaved(true)
     setTimeout(() => setIsSaved(false), 2000)
-    // Trigger voice fetch on save
-    if (localKey) fetchVoices(localKey)
   }
 
   return (
@@ -84,8 +57,30 @@ function IndexPopup() {
       {/* Content */}
       <div className="relative z-10 flex-1 px-6 py-4 space-y-6">
 
-        {/* API Key */}
-        <div className="space-y-2">
+        {/* Mode Toggle */}
+        <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Audio Engine</span>
+            <span className="text-[9px] text-zinc-600 font-mono mt-0.5">
+              {isElevenLabsEnabled ? "PREMIUM (ElevenLabs)" : "Standard (WebTTS)"}
+            </span>
+          </div>
+          <button
+            onClick={() => setIsElevenLabsEnabled(!isElevenLabsEnabled)}
+            className={cn(
+              "w-10 h-5 rounded-full relative transition-all duration-300 shadow-inner",
+              isElevenLabsEnabled ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.3)]" : "bg-zinc-700"
+            )}
+          >
+            <div className={cn(
+              "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300",
+              isElevenLabsEnabled ? "left-[22px]" : "left-0.5"
+            )} />
+          </button>
+        </div>
+
+        {/* API Key (Only show if ElevenLabs is enabled) */}
+        <div className={cn("space-y-2 transition-all duration-300", isElevenLabsEnabled ? "opacity-100" : "opacity-30 pointer-events-none grayscale")}>
           <label className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-zinc-500">
             <Power size={10} className={apiKey ? "text-green-500" : "text-zinc-600"} />
             ElevenLabs API Key
@@ -101,53 +96,6 @@ function IndexPopup() {
             <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 opacity-0 group-focus-within:opacity-100 pointer-events-none transition-opacity duration-500" />
           </div>
         </div>
-
-        {/* Voice Selection */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">
-              Voice Persona
-            </label>
-            <button
-              onClick={() => fetchVoices(apiKey || localKey)}
-              disabled={isLoadingVoices}
-              className="text-[10px] text-zinc-600 hover:text-white transition-colors flex items-center gap-1 group"
-            >
-              <RefreshCw size={10} className={cn("group-hover:rotate-180 transition-transform duration-500", isLoadingVoices ? "animate-spin" : "")} />
-              {isLoadingVoices ? "SYNCING..." : "SYNC"}
-            </button>
-          </div>
-
-          <div className="relative group">
-            <select
-              value={voiceId}
-              onChange={(e) => setVoiceId(e.target.value)}
-              disabled={isLoadingVoices || voices.length === 0}
-              className="w-full appearance-none bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-[12px] font-medium text-zinc-300 focus:outline-none focus:border-blue-500/50 focus:bg-black/60 transition-all shadow-[inset_0_2px_5px_rgba(0,0,0,0.2)]"
-            >
-              {voices.length === 0 && <option value={voiceId}>Select Voice...</option>}
-              {voices.map(v => (
-                <option key={v.voice_id} value={v.voice_id} className="bg-neutral-900 text-zinc-300">
-                  {v.name}
-                </option>
-              ))}
-            </select>
-            {/* Custom Arrow */}
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600 group-hover:text-zinc-400 transition-colors">
-              {isLoadingVoices ? (
-                <Loader2 size={14} className="animate-spin text-blue-500" />
-              ) : (
-                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" className="opacity-60"><path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              )}
-            </div>
-          </div>
-          {voiceError && (
-            <div className="text-[10px] text-red-400 font-mono mt-1 bg-red-900/10 border border-red-500/10 p-1.5 rounded text-center">
-              {voiceError}
-            </div>
-          )}
-        </div>
-
       </div>
 
       {/* Footer */}
@@ -174,8 +122,14 @@ function IndexPopup() {
         </button>
 
         <div className="mt-4 flex justify-between items-center text-[9px] text-zinc-700 font-mono uppercase tracking-wider">
-          <span>v2.0.0 PRO</span>
-          <span>Audicle</span>
+          <span>v2.1.0 PRO</span>
+          <div className="flex items-center gap-3">
+            <a href="https://buymeacoffee.com/bikiprasad" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-zinc-500 hover:text-yellow-400 transition-colors">
+              <Coffee size={10} />
+              <span>Support</span>
+            </a>
+            <span>Audicle</span>
+          </div>
         </div>
       </div>
     </div>

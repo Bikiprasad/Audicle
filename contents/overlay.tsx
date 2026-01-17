@@ -3,9 +3,16 @@ import { motion, AnimatePresence } from "framer-motion"
 import { useSettings } from "~hooks/useSettings"
 import { usePlayerStore } from "~store/usePlayerStore"
 import { parseCurrentPage } from "~lib/parser"
-import { streamTextToAudio, getVoices, type Voice } from "~services/elevenlabs"
+import type { Voice } from "~lib/audio/types"
+import { audioService } from "~lib/audio/AudioService"
 import { Play, Pause, FastForward, ScanSearch, X, FileText, Minus, Plus, Zap, Volume2, Move, Loader2, RefreshCw, Settings2, SkipBack, Edit3, Volume1 } from "lucide-react"
 import { cn } from "~lib/utils"
+
+import type { PlasmoCSConfig } from "plasmo"
+
+export const config: PlasmoCSConfig = {
+    matches: ["https://x.com/*", "https://twitter.com/*"]
+}
 
 // Inject styles
 import cssText from "data-text:~style.css"
@@ -58,16 +65,16 @@ const Tooltip = ({ children, text, className }: { children: React.ReactNode, tex
 }
 
 function Overlay() {
-    const { apiKey, voiceId, playbackSpeed, showOverlay, setVoiceId, setShowOverlay, setPlaybackSpeed } = useSettings()
+    const { apiKey, voiceId, playbackSpeed, showOverlay, isElevenLabsEnabled, setVoiceId, setShowOverlay, setPlaybackSpeed } = useSettings()
     const { uiState, isPlaying, text, generationProgress, setUiState, setIsPlaying, setText, setGenerationProgress, reset } = usePlayerStore()
 
     const [error, setError] = useState<string | null>(null)
     const [backgroundImage, setBackgroundImage] = useState<string | null>(null) // New State
 
     // Audio State
-    const [playlist, setPlaylist] = useState<AudioChunk[]>([])
+    // const [playlist, setPlaylist] = useState<any[]>([]) 
     const [currentIndex, setCurrentIndex] = useState(0)
-    const audioRef = useRef<HTMLAudioElement | null>(null)
+    // const audioRef = useRef<HTMLAudioElement | null>(null)
     const [currentTime, setCurrentTime] = useState(0)
     const [duration, setDuration] = useState(0)
     const [isScrubbing, setIsScrubbing] = useState(false)
@@ -87,10 +94,9 @@ function Overlay() {
 
     // Helper: Load Voices
     const loadVoices = async () => {
-        if (!apiKey) return
         setIsLoadingVoices(true)
         try {
-            const list = await getVoices(apiKey)
+            const list = await audioService.getVoices(apiKey, isElevenLabsEnabled)
             setVoices(list)
         } catch (e) {
             console.error(e)
@@ -98,6 +104,13 @@ function Overlay() {
             setIsLoadingVoices(false)
         }
     }
+
+    // Load voices when Overlay is shown or Key changes
+    useEffect(() => {
+        if (showOverlay) {
+            loadVoices()
+        }
+    }, [showOverlay, apiKey, isElevenLabsEnabled])
 
     // Close Editor when state changes from editing
     useEffect(() => {
@@ -193,84 +206,46 @@ function Overlay() {
             })
         }
 
-        const observer = new MutationObserver(handleInject)
-        observer.observe(document.body, { childList: true, subtree: true })
+        // Use setInterval instead of MutationObserver for performance on complex SPAs like X
+        // MutationObserver with subtree:true on document.body is too expensive here.
+        const intervalId = setInterval(handleInject, 1500)
 
-        // Initial run with delay to ensure hydration
-        setTimeout(handleInject, 1000)
-        setTimeout(handleInject, 3000)
+        // Initial run
+        handleInject()
 
-        return () => observer.disconnect()
+        return () => clearInterval(intervalId)
     }, [setShowOverlay, setText, setUiState])
 
 
 
-    // Refs for effects
-    const isScrubbingRef = useRef(false)
-    const playNextRef = useRef<() => void>(null)
-
-    // Sync refs
-    useEffect(() => { isScrubbingRef.current = isScrubbing }, [isScrubbing])
-
+    // Audio Polling for UI Sync
     useEffect(() => {
-        playNextRef.current = () => {
-            setCurrentIndex(prev => {
-                if (prev < playlist.length - 1) return prev + 1
-                setIsPlaying(false)
-                return prev
-            })
+        let intervalId: NodeJS.Timeout;
+
+        if (uiState === 'ready') {
+            intervalId = setInterval(() => {
+                // Only poll if we think we might be playing or to update time
+                const t = audioService.getCurrentTime();
+                const d = audioService.getDuration();
+
+                // Avoid excessive state updates if values haven't changed significantly
+                setCurrentTime(prev => Math.abs(prev - t) > 0.1 ? t : prev);
+                if (d > 0) setDuration(prev => prev !== d ? d : prev);
+
+            }, 100); // 100ms is standard for UI updates
         }
-    }, [playlist.length, setIsPlaying])
 
-    // Init Audio (Rub once)
+        return () => clearInterval(intervalId);
+    }, [uiState]); // Removed isPlaying dependency to avoid re-creating interval constantly
+
+    // Volume & Speed Sync
     useEffect(() => {
-        const audio = new Audio()
-        audioRef.current = audio
-        audio.volume = volume
-
-        const updateTime = () => {
-            if (!isScrubbingRef.current) setCurrentTime(audio.currentTime)
+        // NOTE: We do not auto-replay on speed change anymore to prevent loops/freezing.
+        // Users must re-click play to apply speed changes for now, or we implement a setSpeed method later.
+        if (audioService.setVolume) {
+            audioService.setVolume(volume);
         }
-        const updateDuration = () => setDuration(audio.duration)
-        const handleEnded = () => playNextRef.current?.()
-
-        audio.addEventListener("timeupdate", updateTime)
-        audio.addEventListener("loadedmetadata", updateDuration)
-        audio.addEventListener("ended", handleEnded)
-
-        return () => {
-            audio.pause()
-            audio.removeEventListener("timeupdate", updateTime)
-            audio.removeEventListener("loadedmetadata", updateDuration)
-            audio.removeEventListener("ended", handleEnded)
-        }
-    }, [])
-
-    // Sync Volume
-    useEffect(() => {
-        if (audioRef.current) audioRef.current.volume = volume
-    }, [volume])
-
-    // Sync Playback Speed
-    useEffect(() => {
-        if (audioRef.current) audioRef.current.playbackRate = playbackSpeed
-    }, [playbackSpeed])
-
-    // Playback Logic
-    useEffect(() => {
-        if (!audioRef.current || playlist.length === 0) return
-        const chunk = playlist[currentIndex]
-        if (!chunk) return
-
-        if (audioRef.current.src !== chunk.url) {
-            audioRef.current.src = chunk.url
-            audioRef.current.playbackRate = playbackSpeed
-            if (isPlaying) audioRef.current.play().catch(console.error)
-        } else {
-            if (isPlaying) audioRef.current.play().catch(console.error)
-            else audioRef.current.pause()
-        }
-    }, [currentIndex, playlist, isPlaying, playbackSpeed])
+    }, [playbackSpeed, volume])
 
     const handleImport = () => {
         setError(null)
@@ -286,39 +261,53 @@ function Overlay() {
     }
 
     const handleGenerate = async () => {
-        if (!apiKey) {
-            setError("API Key Missing")
-            return
-        }
         setUiState("generating")
-        setPlaylist([])
-        setCurrentIndex(0)
+        setCurrentIndex(0) // Logic for word highlighting might be broken or need simpler approach
         setGenerationProgress(0, 0)
         setError(null)
 
         try {
-            const newPlaylist: AudioChunk[] = []
-            await streamTextToAudio(
-                text,
+            console.log("Overlay: Playing", {
+                textLength: text.length,
                 voiceId,
-                apiKey,
-                (blob, textChunk) => newPlaylist.push({ url: URL.createObjectURL(blob), text: textChunk }),
-                (current, total) => setGenerationProgress(current, total)
-            )
-            setPlaylist(newPlaylist)
+                playbackSpeed,
+                activeProvider: audioService.getProviderName()
+            });
             setUiState("ready")
+            setIsPlaying(true)
+            await audioService.play(text, voiceId, playbackSpeed, apiKey, isElevenLabsEnabled, (boundary) => {
+                // Update highlighting
+                setCurrentIndex(boundary.charIndex)
+            })
+            console.log("Overlay: Playback finished");
+            setIsPlaying(false)
+            // setUiState("ready") // Keep it in ready state
         } catch (e: any) {
-            setError("Gen Failed")
+            console.error("Overlay: Playback failed", e);
+            setError("Playback failed")
             setUiState("editing")
+            setIsPlaying(false)
         }
     }
 
     const restartPlaylist = () => {
-        setCurrentIndex(0)
-        setIsPlaying(true)
-        if (audioRef.current) {
-            audioRef.current.currentTime = 0
-            audioRef.current.play().catch(console.error)
+        audioService.stop();
+        setCurrentIndex(0) // Reset UI
+        handleGenerate() // Re-trigger generate/play
+    }
+
+    const [isMinimized, setIsMinimized] = useState(false)
+    const [isMuted, setIsMuted] = useState(false)
+    const previousVolume = useRef(1)
+
+    const toggleMute = () => {
+        if (isMuted) {
+            setVolume(previousVolume.current)
+            setIsMuted(false)
+        } else {
+            previousVolume.current = volume
+            setVolume(0)
+            setIsMuted(true)
         }
     }
 
@@ -327,6 +316,68 @@ function Overlay() {
     // Filter voices
     const filteredVoices = voices.filter(v => v.name.toLowerCase().includes(searchVoice.toLowerCase()))
 
+    // MINIMIZED VIEW
+    if (isMinimized) {
+        return (
+            <motion.div
+                drag
+                dragMomentum={false}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="fixed top-12 right-12 z-[2147483647] font-sans antialiased"
+            >
+                <div className="flex items-center gap-2 bg-neutral-900/90 backdrop-blur-xl border border-white/10 rounded-full p-2 pr-4 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
+
+                    {/* Expand Button (Left) */}
+                    <button
+                        onClick={() => setIsMinimized(false)}
+                        className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                    >
+                        <Plus size={14} className="rotate-45" /> {/* Use Plus rotated as Expand/Close-ish icon or just Maximize icon */}
+                    </button>
+
+                    {/* Play/Pause */}
+                    <button
+                        onClick={() => {
+                            if (isPlaying) {
+                                audioService.pause();
+                                setIsPlaying(false);
+                            } else {
+                                audioService.resume();
+                                setIsPlaying(true);
+                            }
+                        }}
+                        className={cn(
+                            "w-10 h-10 rounded-full flex items-center justify-center transition-all",
+                            isPlaying
+                                ? "bg-amber-500 text-white shadow-[0_0_15px_rgba(245,158,11,0.5)]"
+                                : "bg-white/10 text-white hover:bg-white/20"
+                        )}
+                    >
+                        {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" className="ml-0.5" />}
+                    </button>
+
+                    {/* Mute/Unmute */}
+                    <button
+                        onClick={toggleMute}
+                        className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center transition-colors",
+                            isMuted ? "text-red-400 bg-red-500/10" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                        )}
+                    >
+                        {isMuted ? <Volume2 size={16} className="opacity-50" /> : <Volume2 size={16} />}
+                        {isMuted && <div className="absolute w-8 h-0.5 bg-red-400 rotate-45" />}
+                    </button>
+
+                    {/* Status Dot */}
+                    <div className={cn("w-2 h-2 rounded-full ml-1 animate-pulse", isPlaying ? "bg-green-500" : "bg-zinc-600")} />
+
+                </div>
+            </motion.div>
+        )
+    }
+
+    // FULL VIEW
     return (
         <motion.div
             drag
@@ -339,12 +390,21 @@ function Overlay() {
             <div className="w-[380px] relative rounded-[32px] p-6 overflow-hidden border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.2)] bg-neutral-900/90 backdrop-blur-xl">
 
                 {/* Close Button */}
-                <button
-                    onClick={() => setShowOverlay(false)}
-                    className="absolute top-4 right-4 z-50 text-white/20 hover:text-white transition-colors"
-                >
-                    <X size={16} />
-                </button>
+                {/* Header Controls */}
+                <div className="absolute top-4 right-4 z-50 flex items-center gap-4">
+                    <button
+                        onClick={() => setIsMinimized(true)}
+                        className="text-zinc-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-full"
+                    >
+                        <Minus size={16} />
+                    </button>
+                    <button
+                        onClick={() => setShowOverlay(false)}
+                        className="text-zinc-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-full"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
 
                 {/* Noise Texture Overlay */}
                 <div className="absolute inset-0 opacity-[0.05] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-repeat mix-blend-overlay" />
@@ -359,7 +419,7 @@ function Overlay() {
                                 className="absolute inset-0 bg-cover bg-center opacity-90 transition-opacity duration-1000"
                                 style={{ backgroundImage: `url(${backgroundImage})` }}
                             />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/30" /> {/* Gradient for text readability at bottom */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/30" /> {/* Darker gradient for text readability */}
                         </div>
                     )}
 
@@ -371,79 +431,93 @@ function Overlay() {
                     {/* Main Display */}
                     <div className="flex-1 flex flex-col justify-center items-center text-center z-30 relative w-full overflow-hidden">
                         {error ? (
-                            <div className="text-red-300 text-xs font-mono bg-red-900/30 px-3 py-2 rounded-lg border border-red-500/20">{error}</div>
+                            <div className="text-red-300 text-xs font-mono bg-red-900/80 px-3 py-2 rounded-lg border border-red-500/20 backdrop-blur-sm shadow-lg">{error}</div>
                         ) : uiState === "idle" ? (
-                            <>
-                                <ScanSearch className="text-zinc-600 mb-3 drop-shadow-[0_0_10px_rgba(255,255,255,0.1)]" size={32} />
-                                <p className="text-zinc-500 text-[10px] tracking-[0.2em] font-bold">READY TO SCAN</p>
-                            </>
+                            <div className="bg-black/60 backdrop-blur-sm p-4 rounded-xl border border-white/5 shadow-2xl flex flex-col items-center">
+                                <ScanSearch className="text-zinc-400 mb-3 drop-shadow-[0_0_10px_rgba(255,255,255,0.1)]" size={24} />
+                                <p className="text-white/90 text-[10px] tracking-[0.2em] font-bold">READY TO SCAN</p>
+                            </div>
                         ) : uiState === "generating" ? (
-                            <div className="w-full px-4">
-                                <p className="text-blue-400 text-[9px] tracking-[0.2em] font-bold animate-pulse text-center mb-2">SYNTHESIZING</p>
-                                <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                            <div className="w-full px-4 flex flex-col items-center">
+                                <div className="bg-black/60 backdrop-blur-sm py-2 px-4 rounded-full border border-white/5 shadow-lg mb-3">
+                                    <p className="text-blue-400 text-[10px] tracking-[0.2em] font-bold animate-pulse text-center">SYNTHESIZING</p>
+                                </div>
+                                <div className="h-1 w-32 bg-zinc-800/80 rounded-full overflow-hidden backdrop-blur-sm">
                                     <motion.div
                                         className="h-full bg-blue-500 shadow-[0_0_10px_#3b82f6]"
                                         initial={{ width: 0 }}
                                         animate={{ width: `${(generationProgress.current / (generationProgress.total || 1)) * 100}%` }}
                                     />
                                 </div>
-                                <p className="text-zinc-600 text-[9px] mt-2 text-center font-mono">{generationProgress.current}/{generationProgress.total}</p>
+                                <p className="text-zinc-400 text-[9px] mt-2 text-center font-mono bg-black/40 px-2 rounded">{generationProgress.current}/{generationProgress.total}</p>
                             </div>
                         ) : uiState === "editing" ? (
                             <div className="flex flex-col items-center justify-center h-full">
-                                <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse mb-2" />
-                                <p className="text-[10px] text-zinc-500 font-mono tracking-widest">CLICK PLAY TO LISTEN</p>
+                                <div className="bg-black/60 backdrop-blur-sm py-2 px-4 rounded-full border border-white/5 shadow-lg flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                                    <p className="text-[10px] text-white/90 font-mono tracking-widest font-bold">CLICK PLAY TO LISTEN</p>
+                                </div>
                             </div>
                         ) : uiState === "ready" ? (
-                            <div className="w-full h-full relative p-4 flex flex-col justify-end items-center pb-1">
-                                <motion.div
-                                    key={currentIndex}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className="text-[18px] leading-relaxed font-bold text-center w-full max-w-full px-2 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] whitespace-nowrap overflow-hidden mb-[-50px]"
-                                >
+                            <div className="w-full h-full relative flex flex-col items-center justify-center">
+                                {/* MARKER LINES */}
+                                <div className="absolute top-0 bottom-0 left-1/2 w-0 border-l border-white/20 h-full z-0 flex flex-col justify-between py-2 pointer-events-none">
+                                    <div className="w-[1px] h-3 bg-white/60 -ml-[0.5px]" />
+                                    <div className="w-[1px] h-3 bg-white/60 -ml-[0.5px]" />
+                                </div>
+
+                                <div className="text-[42px] font-serif leading-none flex items-center z-10 w-full whitespace-nowrap">
                                     {(() => {
-                                        const words = playlist[currentIndex]?.text?.split(/\s+/) || []
-                                        if (words.length === 0) return null
+                                        // 1. Find the current word based on currentIndex
+                                        const safeIndex = Math.min(Math.max(0, currentIndex), text.length - 1);
+                                        // Simple boundary check: scan back/forward for space
+                                        const isSpace = (i: number) => /\s/.test(text[i] || " ");
 
-                                        const progress = currentTime / (duration || 0.1)
-                                        const safeProgress = Math.min(Math.max(progress, 0), 0.99)
-                                        const activeIndex = Math.floor(safeProgress * words.length)
+                                        let start = safeIndex;
+                                        while (start > 0 && !isSpace(start - 1)) start--;
 
-                                        // Show 7 words: 3 before, active, 3 after
-                                        let start = Math.max(0, activeIndex - 3)
-                                        let end = start + 7
+                                        let end = safeIndex;
+                                        while (end < text.length && !isSpace(end)) end++;
 
-                                        if (end > words.length) {
-                                            end = words.length
-                                            start = Math.max(0, end - 7)
-                                        }
+                                        const rawWord = text.slice(start, end);
+                                        const word = rawWord.trim();
 
-                                        const visibleSlice = words.slice(start, end)
+                                        if (!word) return <span className="w-full text-center text-zinc-600 text-lg font-sans">...</span>;
 
-                                        return visibleSlice.map((word, i) => {
-                                            const absIndex = start + i
-                                            const isActive = absIndex === activeIndex
-                                            const isEdge = i === 0 || i === visibleSlice.length - 1
+                                        // 2. ORP Calculation
+                                        let orpIndex = 0;
+                                        const len = word.length;
+                                        if (len === 1) orpIndex = 0;
+                                        else if (len >= 2 && len <= 4) orpIndex = 1;
+                                        else if (len >= 5 && len <= 9) orpIndex = 2;
+                                        else orpIndex = 3;
 
-                                            return (
-                                                <span
-                                                    key={absIndex}
-                                                    className={cn(
-                                                        "inline-block mx-1.5 transition-all duration-150 transform",
-                                                        isActive
-                                                            ? "text-blue-400 scale-110 z-10 opacity-100"
-                                                            : isEdge
-                                                                ? "text-white/30 scale-90 blur-[1px]"
-                                                                : "text-white/70 scale-95"
-                                                    )}
-                                                >
-                                                    {word}
-                                                </span>
-                                            )
-                                        })
+                                        if (orpIndex >= len) orpIndex = len - 1;
+
+                                        const leftPart = word.slice(0, orpIndex);
+                                        const orpChar = word[orpIndex];
+                                        const rightPart = word.slice(orpIndex + 1);
+
+                                        return (
+                                            <div className="flex w-full items-baseline justify-center">
+                                                {/* Left Side (Align Right to Touch Center) */}
+                                                <div className="flex-1 text-right">
+                                                    <span className="text-white">{leftPart}</span>
+                                                </div>
+
+                                                {/* ORP (Centered) */}
+                                                <div className="w-[1ch] text-center text-red-500 font-bold shrink-0 mx-0">
+                                                    {orpChar}
+                                                </div>
+
+                                                {/* Right Side (Align Left to Touch Center) */}
+                                                <div className="flex-1 text-left">
+                                                    <span className="text-white">{rightPart}</span>
+                                                </div>
+                                            </div>
+                                        );
                                     })()}
-                                </motion.div>
+                                </div>
                             </div>
                         ) : null}
                     </div>
@@ -482,9 +556,9 @@ function Overlay() {
                             onMouseDown={() => setIsScrubbing(true)}
                             onMouseUp={() => setIsScrubbing(false)}
                             onChange={(e) => {
+                                // Seeking not fully supported yet in AudioService abstraction
                                 const t = parseFloat(e.target.value);
                                 setCurrentTime(t);
-                                if (audioRef.current) audioRef.current.currentTime = t
                             }}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-40"
                             aria-label="Seek"
@@ -533,7 +607,15 @@ function Overlay() {
                                     onClick={() => {
                                         if (uiState === "idle") handleImport()
                                         else if (uiState === "editing") handleGenerate()
-                                        else if (uiState === "ready") setIsPlaying(!isPlaying)
+                                        else if (uiState === "ready") {
+                                            if (isPlaying) {
+                                                audioService.pause();
+                                                setIsPlaying(false);
+                                            } else {
+                                                audioService.resume();
+                                                setIsPlaying(true);
+                                            }
+                                        }
                                     }}
                                 >
                                     {uiState === "idle" && <ScanSearch size={20} className="text-zinc-400" />}
@@ -620,7 +702,7 @@ function Overlay() {
                                 <div className="text-left">
                                     <p className="text-[11px] text-zinc-500 uppercase tracking-wider font-semibold">Voice Persona</p>
                                     <p className="text-[13px] text-white font-medium truncate w-40">
-                                        {voices.find(v => v.voice_id === voiceId)?.name || "Select Voice"}
+                                        {voices.find(v => v.id === voiceId)?.name || "Select Voice"}
                                     </p>
                                 </div>
                             </div>
@@ -649,21 +731,21 @@ function Overlay() {
                                         <div className="max-h-[140px] overflow-y-auto custom-scrollbar space-y-1">
                                             {filteredVoices.map(v => (
                                                 <button
-                                                    key={v.voice_id}
+                                                    key={v.id}
                                                     onClick={() => {
-                                                        setVoiceId(v.voice_id)
+                                                        setVoiceId(v.id)
                                                         setShowVoiceSelect(false)
                                                         if (uiState === "ready") setUiState("editing")
                                                     }}
                                                     className={cn(
                                                         "w-full flex items-center justify-between px-3 py-2 rounded-lg text-[12px] transition-all",
-                                                        voiceId === v.voice_id
+                                                        voiceId === v.id
                                                             ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
                                                             : "text-zinc-400 hover:bg-white/5 hover:text-white"
                                                     )}
                                                 >
                                                     <span>{v.name}</span>
-                                                    {voiceId === v.voice_id && <div className="w-2 h-2 bg-blue-500 rounded-full" />}
+                                                    {voiceId === v.id && <div className="w-2 h-2 bg-blue-500 rounded-full" />}
                                                 </button>
                                             ))}
                                         </div>

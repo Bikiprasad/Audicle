@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react"
 
+
 export interface Settings {
     elevenLabsApiKey: string
     voiceId: string
     playbackSpeed: number
     showOverlay: boolean
+    isElevenLabsEnabled?: boolean
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -37,6 +39,7 @@ export const useSettings = () => {
                 console.log("Audicle: Synced settings (v1)", val)
             }
         }
+
         chrome.storage.onChanged.addListener(onChange)
         return () => chrome.storage.onChanged.removeListener(onChange)
     }, [])
@@ -45,6 +48,7 @@ export const useSettings = () => {
     const updateSettings = (updates: Partial<Settings>) => {
         setSettings(prev => {
             const next = { ...prev, ...updates }
+
             // Save to storage
             chrome.storage.local.set({ "audicle-v1": next }, () => {
                 if (chrome.runtime.lastError) {
@@ -63,9 +67,11 @@ export const useSettings = () => {
         voiceId: settings.voiceId,
         playbackSpeed: settings.playbackSpeed,
         showOverlay: settings.showOverlay,
+        isElevenLabsEnabled: settings.isElevenLabsEnabled !== undefined ? settings.isElevenLabsEnabled : true, // Helper for legacy
         setApiKey: (key: string) => updateSettings({ elevenLabsApiKey: key }),
         setVoiceId: (id: string) => updateSettings({ voiceId: id }),
         setPlaybackSpeed: (speed: number) => updateSettings({ playbackSpeed: speed }),
-        setShowOverlay: (show: boolean) => updateSettings({ showOverlay: show })
+        setShowOverlay: (show: boolean) => updateSettings({ showOverlay: show }),
+        setIsElevenLabsEnabled: (enabled: boolean) => updateSettings({ isElevenLabsEnabled: enabled })
     }
 }
