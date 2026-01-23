@@ -8,6 +8,7 @@ export interface Voice {
 export interface WordBoundaryEvent {
     charIndex: number;
     charLength?: number;
+    name?: string; // e.g. 'word' or 'sentence'
 }
 
 export interface AudioProvider {
@@ -18,5 +19,8 @@ export interface AudioProvider {
     getVoices(): Promise<Voice[]>;
     getCurrentTime?(): number;
     getDuration?(): number;
+    getDuration?(): number;
     setVolume?(volume: number): void;
+    seek?(time: number): void;
+    download?(text: string, voiceId: string): Promise<void>;
 }

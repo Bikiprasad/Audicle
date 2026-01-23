@@ -68,6 +68,27 @@ class AudioService {
             this.provider.setVolume(volume);
         }
     }
+
+    setSpeed(speed: number): void {
+        // We cast to any because setSpeed might not be on AudioProvider interface yet
+        // Ideally we update the interface too.
+        if ((this.provider as any).setSpeed) {
+            (this.provider as any).setSpeed(speed);
+        }
+    }
+
+    seek(time: number): void {
+        if (this.provider.seek) {
+            this.provider.seek(time);
+        }
+    }
+
+    async download(text: string, voiceId: string): Promise<void> {
+        if (this.provider.download) {
+            return this.provider.download(text, voiceId);
+        }
+        throw new Error("Download not supported by current provider");
+    }
 }
 
 export const audioService = new AudioService();

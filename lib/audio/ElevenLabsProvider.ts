@@ -1,12 +1,30 @@
 import type { AudioProvider, Voice, WordBoundaryEvent } from "./types";
+import { audioCache } from "./AudioCache";
 
 export class ElevenLabsProvider implements AudioProvider {
     private apiKey: string;
-    private audioQueue: HTMLAudioElement[] = [];
-    private currentAudio: HTMLAudioElement | null = null;
     private isPlaying: boolean = false;
-    private abortController: AbortController | null = null;
     private volume: number = 1;
+
+    // MediaSource State
+    private mediaSource: MediaSource | null = null;
+    private sourceBuffer: SourceBuffer | null = null;
+    private audio: HTMLAudioElement | null = null;
+
+    // Streaming State
+    private allChunks: string[] = []; // Master list of all chunks
+    private isFetching: boolean = false;
+    private abortController: AbortController | null = null;
+
+    // Playback State
+    private estimatedDuration: number = 0;
+    private fullTextLength: number = 0;
+    private currentVoiceId: string = "";
+
+    private fullText: string = "";
+    private currentSpeed: number = 1;
+    private onBoundary?: (e: WordBoundaryEvent) => void;
+    private monitorInterval: NodeJS.Timeout | null = null;
 
     constructor(apiKey: string) {
         this.apiKey = apiKey;
@@ -37,41 +55,185 @@ export class ElevenLabsProvider implements AudioProvider {
     }
 
     async play(text: string, voiceId: string, speed: number, onBoundary?: (e: WordBoundaryEvent) => void): Promise<void> {
-        this.stop(); // Stop previous
-
-        // Small delay to ensure clean state for replay
+        this.stop();
         await new Promise(r => setTimeout(r, 50));
 
         this.isPlaying = true;
+        this.fullText = text;
+        this.currentVoiceId = voiceId;
+        this.fullTextLength = text.length;
+        this.onBoundary = onBoundary;
         this.abortController = new AbortController();
 
-        const chunks = this.splitTextSmartly(text, 500);
+        this.estimatedDuration = text.length / 15;
 
-        // We track global char index across chunks
-        let globalCharIndex = 0;
+        this.mediaSource = new MediaSource();
+        this.audio = new Audio();
+        this.audio.src = URL.createObjectURL(this.mediaSource);
+        this.audio.volume = this.volume;
+        this.audio.playbackRate = speed;
+        this.currentSpeed = speed;
 
-        for (const chunk of chunks) {
-            if (!this.isPlaying) break;
-            if (this.abortController.signal.aborted) break;
+        this.mediaSource.addEventListener('sourceopen', () => {
+            this.startStreaming();
+        });
+
+        this.audio.addEventListener('canplay', () => {
+            if (this.isPlaying && this.audio?.paused) {
+                this.audio.play().catch(e => console.error("Play failed", e));
+            }
+        });
+
+        this.startMonitor();
+    }
+
+    private startMonitor() {
+        if (this.monitorInterval) clearInterval(this.monitorInterval);
+        this.monitorInterval = setInterval(() => {
+            if (!this.isPlaying || !this.audio || this.audio.paused) return;
+
+            // Estimate character position based on time
+            // Base rate: 15 chars/sec at 1x, scales with playback speed
+            const currentTime = this.audio.currentTime;
+            const charsPerSec = 15 * this.currentSpeed;
+            const estimatedCharIndex = Math.floor(currentTime * charsPerSec);
+
+            if (this.onBoundary) {
+                this.onBoundary({
+                    name: 'word',
+                    charIndex: estimatedCharIndex,
+                    charLength: 1 // We don't verify length, UI handles snapping
+                });
+            }
+        }, 100);
+    }
+
+    private async startStreaming() {
+        if (!this.mediaSource || this.mediaSource.readyState !== 'open') return;
+        try {
+            this.sourceBuffer = this.mediaSource.addSourceBuffer('audio/mpeg');
+        } catch (e) {
+            console.error(e);
+            return;
+        }
+
+        this.allChunks = this.splitTextSmartly(this.fullText, 1000);
+        await this.processQueue(0);
+    }
+
+    private async processQueue(startIndex: number) {
+        let globalCharOffset = 0;
+        for (let i = 0; i < startIndex; i++) {
+            globalCharOffset += this.allChunks[i].length + 1;
+        }
+
+        const startTime = globalCharOffset / 15;
+
+        if (this.sourceBuffer) {
+            // Check if we can clean buffer?
+            // Safer to just set timestampOffset. 
+            // If browser has buffered 0-10s, and we set offset to 20s, it works.
+            this.sourceBuffer.timestampOffset = startTime;
+        }
+
+        if (this.audio) {
+            this.audio.currentTime = startTime;
+        }
+
+        for (let i = startIndex; i < this.allChunks.length; i++) {
+            if (!this.isPlaying || this.abortController?.signal.aborted) break;
+
+            const chunk = this.allChunks[i];
 
             try {
-                const blob = await this.fetchAudio(chunk, voiceId);
-                if (!blob) {
-                    globalCharIndex += chunk.length + 1; // +1 for space/separator
-                    continue;
-                }
+                const arrayBuffer = await this.fetchAudioChunk(chunk, this.currentVoiceId);
+                if (!arrayBuffer) continue;
 
-                await this.playBlob(blob, speed, chunk, globalCharIndex, onBoundary);
-                globalCharIndex += chunk.length + 1;
+                await this.appendToBuffer(arrayBuffer);
+                globalCharOffset += chunk.length + 1;
             } catch (e) {
-                console.error("Error playing chunk", e);
+                console.error("Stream Loop Error", e);
             }
         }
 
-        this.isPlaying = false;
+        if (this.mediaSource && this.mediaSource.readyState === 'open') {
+            this.mediaSource.endOfStream();
+        }
     }
 
-    private async fetchAudio(text: string, voiceId: string): Promise<Blob | null> {
+    seek(time: number): void {
+        if (!this.audio || !this.mediaSource) return;
+
+        const safeTime = Math.max(0, Math.min(time, this.estimatedDuration));
+        const estimatedCharIndex = Math.floor(safeTime * 15);
+
+        let cumulativeChars = 0;
+        let targetChunkIndex = 0;
+
+        for (let i = 0; i < this.allChunks.length; i++) {
+            cumulativeChars += this.allChunks[i].length + 1;
+            if (cumulativeChars > estimatedCharIndex) {
+                targetChunkIndex = i;
+                break;
+            }
+        }
+
+        console.log("Seeking to Chunk:", targetChunkIndex, "Time:", safeTime);
+
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = new AbortController();
+        }
+
+        if (this.sourceBuffer && !this.sourceBuffer.updating) {
+            try {
+                this.sourceBuffer.abort();
+                // We attempt to remove existing buffer to safely reset playback state
+                // This prevents "restart from beginning" glitches if timestamps overlap weirdly.
+                // Note: remove is async, but we can usually fire-and-forget before new append/offset updates?
+                // Actually, best practice is to wait. But `processQueue` sets `timestampOffset` immediately.
+                // Let's rely on timestampOffset logic which is standard for "seeking to new segment".
+
+                // If we are truly restarting from scratch, removing is cleaner.
+                // Let's TRY to remove 0-infinity
+                this.sourceBuffer.remove(0, this.mediaSource.duration);
+            } catch (e) { }
+        }
+
+        // Wait small tick for cleanup?
+        setTimeout(() => {
+            this.processQueue(targetChunkIndex);
+        }, 50);
+    }
+
+    private async appendToBuffer(buffer: ArrayBuffer): Promise<void> {
+        return new Promise((resolve) => {
+            if (!this.sourceBuffer) { resolve(); return; }
+
+            if (this.sourceBuffer.updating) {
+                this.sourceBuffer.addEventListener('updateend', () => {
+                    this.sourceBuffer?.appendBuffer(buffer);
+                }, { once: true });
+            } else {
+                this.sourceBuffer.appendBuffer(buffer);
+            }
+
+            const onUpdateEnd = () => {
+                this.sourceBuffer?.removeEventListener('updateend', onUpdateEnd);
+                resolve();
+            }
+            this.sourceBuffer.addEventListener('updateend', onUpdateEnd);
+        });
+    }
+
+    private async fetchAudioChunk(text: string, voiceId: string): Promise<ArrayBuffer | null> {
+        // Check cache first
+        const cached = await audioCache.get(text, voiceId);
+        if (cached) {
+            console.log('[ElevenLabs] Cache hit, saving API call');
+            return cached;
+        }
+
         try {
             const response = await fetch(
                 `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
@@ -90,158 +252,79 @@ export class ElevenLabsProvider implements AudioProvider {
                 }
             );
 
-            if (!response.ok) {
-                console.error("ElevenLabs API Error", await response.text());
-                return null;
-            }
+            if (!response.ok) return null;
+            const buffer = await response.arrayBuffer();
 
-            return await response.blob();
+            // Store in cache
+            audioCache.set(text, voiceId, buffer).catch(e => console.warn('[AudioCache] Store failed:', e));
+
+            return buffer;
         } catch (e) {
-            if (e.name === 'AbortError') return null;
-            console.error(e);
             return null;
         }
     }
 
-    private async playBlob(
-        blob: Blob,
-        speed: number,
-        textChunk: string,
-        startIndex: number,
-        onBoundary?: (e: WordBoundaryEvent) => void
-    ): Promise<void> {
-        return new Promise((resolve, reject) => {
-            if (!this.isPlaying) {
-                resolve();
-                return;
-            }
-
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            this.currentAudio = audio;
-            audio.playbackRate = speed;
-
-            // ESTIMATION LOGIC
-            // To simulate karaoke, we assume words are spoken evenly distrubuted over time.
-            // This is imperfect but better than nothing for raw audio.
-            let intervalId: NodeJS.Timeout;
-
-            if (onBoundary) {
-                audio.onloadedmetadata = () => {
-                    const duration = audio.duration / speed;
-                    const words = textChunk.split(/(\s+)/); // split but keep separators to count chars correctly
-                    let charCount = 0;
-                    let wordIndex = 0;
-
-                    // Simple estimation: emit word events based on fraction of duration
-                    // A better way: pre-calculate word timings? No data.
-                    // Let's just emit events linearly? No, that's too robotic.
-                    // Let's try to map word length to duration fraction? 
-                    // length / totalLength * duration
-
-                    const totalChars = textChunk.length;
-                    let accumulatedTime = 0;
-                    let timeMap: { time: number, index: number }[] = [];
-
-                    for (let i = 0; i < words.length; i++) {
-                        const word = words[i];
-                        // Should we highlight separators? usually not.
-                        // boundary event usually fires at start of word.
-                        if (word.trim().length > 0) {
-                            const percent = word.length / totalChars;
-                            const time = percent * duration * 1000; // ms
-                            timeMap.push({ time: accumulatedTime, index: startIndex + charCount });
-                            accumulatedTime += time;
-                        } else {
-                            // space/separator, just add duration but no event? 
-                            // Or just assume spaces take small time?
-                            const percent = word.length / totalChars;
-                            accumulatedTime += percent * duration * 1000;
-                        }
-                        charCount += word.length;
-                    }
-
-                    // Now play and check time
-                    const startTime = Date.now();
-                    let currentWordIdx = 0;
-
-                    intervalId = setInterval(() => {
-                        if (!this.isPlaying || audio.paused) return;
-                        const elapsed = (Date.now() - startTime) * speed; // scale by speed? 
-                        // Actually audio.currentTime is better source if available
-                        const currentT = audio.currentTime * 1000;
-
-                        // Find next word
-                        // simple: check if currentT passed the next word's expected start time
-                        // We need to match currentT to timeMap
-                        while (currentWordIdx < timeMap.length && currentT >= timeMap[currentWordIdx].time) {
-                            onBoundary({ charIndex: timeMap[currentWordIdx].index });
-                            currentWordIdx++;
-                        }
-                    }, 50);
-                };
-            }
-
-
-            audio.onended = () => {
-                clearInterval(intervalId);
-                URL.revokeObjectURL(url);
-                this.currentAudio = null;
-                resolve();
-            };
-
-            audio.onerror = (e) => {
-                clearInterval(intervalId);
-                URL.revokeObjectURL(url);
-                this.currentAudio = null;
-                reject(e);
-            };
-
-            audio.volume = this.volume;
-            audio.play().catch(reject);
-        });
-    }
-
-
-    pause(): void {
-        this.isPlaying = false;
-        if (this.currentAudio) {
-            this.currentAudio.pause();
-        }
-    }
-
-    resume(): void {
-        this.isPlaying = true;
-        if (this.currentAudio) {
-            this.currentAudio.play();
-        }
+    setSpeed(speed: number): void {
+        if (this.audio) this.audio.playbackRate = speed;
+        this.currentSpeed = speed;
     }
 
     stop(): void {
         this.isPlaying = false;
-        if (this.abortController) {
-            this.abortController.abort();
-            this.abortController = null;
+        if (this.monitorInterval) {
+            clearInterval(this.monitorInterval);
+            this.monitorInterval = null;
         }
-        if (this.currentAudio) {
-            this.currentAudio.pause();
-            this.currentAudio.currentTime = 0;
-            this.currentAudio = null;
-        }
+        if (this.abortController) this.abortController.abort();
+        if (this.audio) this.audio.pause();
+        this.mediaSource = null;
+        this.sourceBuffer = null;
     }
 
-    getCurrentTime(): number {
-        return this.currentAudio?.currentTime || 0;
-    }
+    pause(): void { this.isPlaying = false; if (this.audio) this.audio.pause(); }
+    resume(): void { this.isPlaying = true; if (this.audio) this.audio.play(); }
+    getCurrentTime(): number { return this.audio?.currentTime || 0; }
+    getDuration(): number { return Math.max(this.estimatedDuration, this.audio?.duration || 0); }
+    setVolume(volume: number): void { this.volume = volume; if (this.audio) this.audio.volume = volume; }
 
-    getDuration(): number {
-        return this.currentAudio?.duration || 0;
-    }
+    async download(text: string, voiceId: string): Promise<void> {
+        // We fetch the whole audio as a single blob for download.
+        // Note: For extremely long texts, this might hit API limits or timeout.
+        // Ideally we reuse the chunks but stitching MP3s client-side is complex (headers).
+        // We'll try a single large request for now. 
 
-    setVolume(volume: number): void {
-        this.volume = volume;
-        if (this.currentAudio) {
-            this.currentAudio.volume = volume;
+        try {
+            const response = await fetch(
+                `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, // Not /stream, we want the whole file
+                {
+                    method: "POST",
+                    headers: {
+                        "xi-api-key": this.apiKey,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        model_id: "eleven_multilingual_v2",
+                        output_format: "mp3_44100_128",
+                    }),
+                }
+            );
+
+            if (!response.ok) throw new Error("Download failed");
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `audicle-reading-${Date.now()}.mp3`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (e) {
+            console.error("Download error", e);
+            throw e;
         }
     }
 
@@ -261,6 +344,6 @@ export class ElevenLabsProvider implements AudioProvider {
             }
         }
         if (currentChunk) chunks.push(currentChunk);
-        return chunks;
+        return chunks.filter(c => c.trim().length > 0);
     }
 }
