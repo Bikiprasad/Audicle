@@ -1,6 +1,11 @@
 import { Readability } from "@mozilla/readability"
 
-export function parseCurrentPage(): string {
+export interface PageContent {
+    text: string
+    url: string
+}
+
+export function parseCurrentPage(): PageContent {
     const hostname = window.location.hostname
 
     // Log for debugging
@@ -13,19 +18,26 @@ export function parseCurrentPage(): string {
     }
 }
 
-function parseArticle(): string {
+function parseArticle(): PageContent {
+    const url = window.location.href
     try {
         const documentClone = document.cloneNode(true) as Document
         const reader = new Readability(documentClone)
         const article = reader.parse()
-        return article ? article.textContent.trim() : ""
+        return {
+            text: article ? article.textContent.trim() : "",
+            url
+        }
     } catch (e) {
         console.error("Readability check failed", e)
-        return (document.body as HTMLElement).innerText.trim()
+        return {
+            text: (document.body as HTMLElement).innerText.trim(),
+            url
+        }
     }
 }
 
-function parseTwitter(): string {
+function parseTwitter(): PageContent {
     const path = window.location.pathname
     const match = path.match(/status\/(\d+)/)
     const tweetId = match ? match[1] : null
@@ -38,45 +50,51 @@ function parseTwitter(): string {
     if (tweetId) {
         const articles = Array.from(document.querySelectorAll('article'))
         mainArticle = articles.find(article => {
-            // Check if any link inside this article points to the specific tweet ID
-            // We check for "status/ID" to avoid partial matches
             const links = Array.from(article.querySelectorAll('a'))
             return links.some(link => link.href.includes(`/status/${tweetId}`))
         }) || null
-
-        if (mainArticle) console.log("Audicle: Found main article by Tweet ID link.")
     }
 
     // Strategy 2: Focus on tabindex="-1" (Often the main focused tweet)
     if (!mainArticle) {
         mainArticle = document.querySelector('article[tabindex="-1"]')
-        if (mainArticle) console.log("Audicle: Found main article by tabindex -1.")
     }
 
-    // Extraction: If we found a specific main article, extract text from it
+    // Strategy 3: Heuristic for "First Visible Tweet" if on Feed
+    // We assume the user wants to play the first fully visible tweet or the one they just clicked?
+    // Actually, `parseCurrentPage` is called when `Overlay` mounts or generates.
+    // If they clicked a "Play" button injected by us, we might know the tweet.
+    // BUT `parseCurrentPage` is a general scraper. It grabs the "Active" content.
+    // If we are on the feed, `parseCurrentPage` might just grab the first visible one.
+
+    if (!mainArticle) {
+        mainArticle = document.querySelector('article')
+    }
+
+    let text = ""
+    let url = window.location.href
+
     if (mainArticle) {
-        // Try to find the specific text container first
+        // Extract Text
         const tweetTextNode = mainArticle.querySelector('[data-testid="tweetText"]')
         if (tweetTextNode) {
-            return cleanText(tweetTextNode.textContent || "")
+            text = cleanText(tweetTextNode.textContent || "")
+        } else {
+            text = cleanText((mainArticle as HTMLElement).innerText)
         }
 
-        // Fallback: Get all text from the article, but try to exclude obvious UI noise
-        // This is a bit "dirty" but handles "Articles" that don't use tweetText structure
-        return cleanText((mainArticle as HTMLElement).innerText)
+        // Extract URL (Permalink)
+        // Look for the <time> element which is wrapped in a link
+        const timeElement = mainArticle.querySelector('time')
+        if (timeElement) {
+            const link = timeElement.closest('a')
+            if (link) {
+                url = link.href
+            }
+        }
     }
 
-    // Strategy 3 (Fallback): Old behavior - just grab the first tweetText or article
-    console.log("Audicle: Fallback to generic selection.")
-
-    const elements = Array.from(document.querySelectorAll('[data-testid="tweetText"]'))
-    if (elements.length > 0) {
-        // Only return the first one as it's likely the main one if we are on a status page
-        return cleanText(elements[0].textContent || "")
-    }
-
-    const firstArticle = document.querySelector('article')
-    return firstArticle ? cleanText((firstArticle as HTMLElement).innerText) : ""
+    return { text, url }
 }
 
 function cleanText(text: string): string {

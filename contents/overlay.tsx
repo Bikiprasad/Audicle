@@ -3,11 +3,13 @@ import { useSettings } from "~hooks/useSettings"
 import { usePlayerStore } from "~store/usePlayerStore"
 import { parseCurrentPage } from "~lib/parser"
 import type { Voice } from "~lib/audio/types"
-import { audioService } from "~lib/audio/AudioService"
+import { audioService } from "~lib/audio/AudioService" // Still needed for getVoices
 import { speedReaderEngine } from "~lib/reader/SpeedReaderEngine"
+import { useReadingList } from "~hooks/useReadingList"
 import { MiniPlayer } from "~components/overlay/MiniPlayer"
 import { Player } from "~components/overlay/Player"
 import { useTwitterInjector } from "~hooks/overlay/useTwitterInjector"
+import { useAudio } from "~hooks/useAudio"
 
 import type { PlasmoCSConfig } from "plasmo"
 
@@ -39,8 +41,16 @@ export const getStyle = () => {
 }
 
 function Overlay() {
-    const { apiKey, voiceId, playbackSpeed, showOverlay, isElevenLabsEnabled, readerMode, speedReaderWpm, setVoiceId, setShowOverlay, setPlaybackSpeed, setSpeedReaderWpm } = useSettings()
-    const { uiState, isPlaying, text, generationProgress, setUiState, setIsPlaying, setText, setGenerationProgress, reset } = usePlayerStore()
+    const { apiKey, voiceId, playbackSpeed, showOverlay, isElevenLabsEnabled, readerMode, speedReaderWpm, kokoroUrl, isKokoroEnabled, isPro, setVoiceId, setShowOverlay, setPlaybackSpeed, setSpeedReaderWpm } = useSettings()
+    const { uiState, text, sourceUrl, generationProgress, setUiState, setText, setSourceUrl, setGenerationProgress, reset } = usePlayerStore()
+    const { addArticle, removeArticle, isSaved, articles } = useReadingList()
+
+    // Using new Audio Hook
+    const audio = useAudio();
+
+    // Sync Store isPlaying with Audio Hook
+    // Note: usePlayerStore's isPlaying might be redundant now, but we keep it for global syncing if needed.
+    // Ideally we should deprecate usePlayerStore.isPlaying in favor of audio.isPlaying
 
     const [error, setError] = useState<string | null>(null)
     const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
@@ -50,33 +60,25 @@ function Overlay() {
     const [isMuted, setIsMuted] = useState(false)
     const [showEditor, setShowEditor] = useState(false)
 
-    // Audio State
-    const [currentTime, setCurrentTime] = useState(0)
-    const [duration, setDuration] = useState(0)
-    const [volume, setVolume] = useState(1)
-    const previousVolume = useRef(1)
-
     // Highlight State
     const [currentIndex, setCurrentIndex] = useState(0)
     const [isFinished, setIsFinished] = useState(false)
+    const [isDownloading, setIsDownloading] = useState(false)
+    const [isDownloadComplete, setIsDownloadComplete] = useState(false)
 
     // Voice Selector State
     const [voices, setVoices] = useState<Voice[]>([])
-    // const [isLoadingVoices, setIsLoadingVoices] = useState(false)
 
     // Waveform Bars
     const bars = useMemo(() => Array.from({ length: 50 }, () => Math.max(0.2, Math.random())), [])
 
     // --- Helper: Load Voices ---
     const loadVoices = async () => {
-        // setIsLoadingVoices(true)
         try {
-            const list = await audioService.getVoices(apiKey, isElevenLabsEnabled)
+            const list = await audioService.getVoices(apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled)
             setVoices(list)
         } catch (e) {
             console.error(e)
-        } finally {
-            // setIsLoadingVoices(false)
         }
     }
 
@@ -85,7 +87,7 @@ function Overlay() {
         if (showOverlay) {
             loadVoices()
         }
-    }, [showOverlay, apiKey, isElevenLabsEnabled])
+    }, [showOverlay, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, readerMode])
 
     // Close Editor when state changes from editing
     useEffect(() => {
@@ -93,52 +95,32 @@ function Overlay() {
     }, [uiState])
 
     // --- Twitter Injection ---
-    useTwitterInjector(setText, setUiState, setBackgroundImage, setShowOverlay, loadVoices)
+    useTwitterInjector(setText, setUiState, setBackgroundImage, setShowOverlay, loadVoices, setSourceUrl)
 
-    // --- Audio Polling ---
+    // --- Word Boundary Sync ---
     useEffect(() => {
-        let intervalId: NodeJS.Timeout;
-
-        if (uiState === 'ready') {
-            intervalId = setInterval(() => {
-                const t = audioService.getCurrentTime();
-                const d = audioService.getDuration();
-
-                setCurrentTime(prev => Math.abs(prev - t) > 0.1 ? t : prev);
-                if (d > 0) setDuration(prev => prev !== d ? d : prev);
-            }, 100);
+        if (audio.wordBoundary) {
+            setCurrentIndex(audio.wordBoundary.charIndex);
         }
+    }, [audio.wordBoundary]);
 
-        return () => clearInterval(intervalId);
-    }, [uiState]);
-
-    // Volume & Speed Sync
+    // --- Audio Error Sync ---
     useEffect(() => {
-        if (audioService.setVolume) {
-            audioService.setVolume(volume);
-        }
-    }, [volume])
+        if (audio.error) setError(audio.error);
+    }, [audio.error]);
 
-    useEffect(() => {
-        // Now using explicit setSpeed
-        if (audioService.setSpeed) {
-            audioService.setSpeed(playbackSpeed);
-        }
-    }, [playbackSpeed])
-
-    // Note: Re-applying speed continuously can be buggy depending on implementation, 
-    // but we'll assume audioService handles it or we do it on demand.
-    // Ideally we call setSpeed only when it changes. 
-    // For now, let's leave it as is or move to onSpeedChange handler.
+    // Initial Speed/Volume Set
+    // (Optional: relying on user action or hook defaults)
 
     // --- Handlers ---
 
     const handleImport = () => {
         setError(null)
         try {
-            const extracted = parseCurrentPage()
-            if (!extracted) throw new Error("No text found.")
-            setText(extracted)
+            const { text: extractedText, url: extractedUrl } = parseCurrentPage()
+            if (!extractedText) throw new Error("No text found.")
+            setText(extractedText)
+            setSourceUrl(extractedUrl)
             setUiState("editing")
             loadVoices()
         } catch (e: any) {
@@ -148,17 +130,30 @@ function Overlay() {
 
     const handleGenerate = async () => {
         setUiState("generating")
+        setGenerationProgress(0, 100)
+
+        // Parsing
+        const { text: parsedText, url: parsedUrl } = parseCurrentPage()
+        setText(parsedText)
+        setSourceUrl(parsedUrl)
+
+        console.log("Audicle: Parsed Content", { textLen: parsedText.length, url: parsedUrl })
+
+        if (!parsedText || parsedText.length < 5) {
+            // Error handling
+            // We might want to set error state
+            setUiState("idle")
+            return
+        }
         setCurrentIndex(0)
-        setGenerationProgress(0, 0)
         setError(null)
 
         // SPEED READER MODE
         if (readerMode === 'speed-reader') {
             try {
-                speedReaderEngine.setText(text)
+                speedReaderEngine.setText(parsedText)
                 speedReaderEngine.setWpm(speedReaderWpm)
                 speedReaderEngine.setOnWordChange((wordIndex, word) => {
-                    // Convert word index to approximate char index for RSVP display
                     const words = text.split(/\s+/)
                     let charIndex = 0
                     for (let i = 0; i < wordIndex && i < words.length; i++) {
@@ -167,98 +162,92 @@ function Overlay() {
                     setCurrentIndex(charIndex)
                 })
                 speedReaderEngine.setOnComplete(() => {
-                    setIsPlaying(false)
                     setIsFinished(true)
                 })
-                setDuration(speedReaderEngine.getEstimatedDuration())
+                // setDuration(speedReaderEngine.getEstimatedDuration()) // SpeedReader doesn't emit standard duration yet
                 setUiState("ready")
                 setIsFinished(false)
-                setIsPlaying(true)
                 speedReaderEngine.play()
             } catch (e: any) {
                 console.error("Speed Reader failed", e)
                 setError("Speed Reader failed")
                 setUiState("editing")
-                setIsPlaying(false)
             }
             return
         }
 
-        // AUDIO MODE (unchanged)
+        // AUDIO MODE
         try {
             console.log("Overlay: Playing", {
                 textLength: text.length,
                 voiceId,
                 playbackSpeed,
-                activeProvider: audioService.getProviderName()
+                activeProvider: audio.isBuffering ? "buffering" : "ready"
             });
             setUiState("ready")
-            setIsPlaying(true)
-            await audioService.play(text, voiceId, playbackSpeed, apiKey, isElevenLabsEnabled, (boundary) => {
-                setCurrentIndex(boundary.charIndex)
-            })
-            console.log("Overlay: Playback finished");
-            setIsPlaying(false)
+
+            await audio.play(text, voiceId, playbackSpeed, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled);
+
+            // Note: Hook will update isPlaying. We don't need manual setIsPlaying here.
+            console.log("Overlay: Playback started");
         } catch (e: any) {
             console.error("Overlay: Playback failed", e);
             setError("Playback failed")
             setUiState("editing")
-            setIsPlaying(false)
         }
     }
 
     const togglePlayPause = () => {
         if (readerMode === 'speed-reader') {
-            if (isPlaying) {
+            if (speedReaderEngine.getIsPlaying()) {
                 speedReaderEngine.pause();
-                setIsPlaying(false);
             } else {
                 speedReaderEngine.play();
-                setIsPlaying(true);
             }
         } else {
-            // Audio mode (unchanged)
-            if (isPlaying) {
-                audioService.pause();
-                setIsPlaying(false);
+            // Audio mode
+            if (audio.isPlaying) {
+                audio.pause();
             } else {
-                audioService.resume();
-                setIsPlaying(true);
+                audio.resume();
             }
         }
     }
 
     const restartPlaylist = () => {
         if (readerMode === 'speed-reader') {
-            setIsFinished(false); // Reset finish state
+            setIsFinished(false);
             speedReaderEngine.restart();
             if (speedReaderEngine.getIsPlaying()) {
                 speedReaderEngine.pause();
             }
             setCurrentIndex(0);
-            setIsPlaying(false); // Pause at start
         } else {
-            // Audio mode (unchanged)
-            audioService.stop();
+            // Audio mode
+            audio.seek(0);
+            if (!audio.isPlaying) {
+                audio.resume();
+            }
             setCurrentIndex(0);
-            handleGenerate();
         }
     }
 
 
     const toggleMute = () => {
+        // Simple mute toggle logic - storing previous volume in component state if needed, 
+        // or just toggling between 0 and 1 (or current volume)
         if (isMuted) {
-            setVolume(previousVolume.current)
+            audio.setVolume(1); // Restore to full? Or store previous?
             setIsMuted(false)
         } else {
-            previousVolume.current = volume
-            setVolume(0)
+            audio.setVolume(0)
             setIsMuted(true)
         }
     }
 
     const handleReset = () => {
         reset()
+        audio.stop()
         setText("This is a sample text")
         setUiState("editing")
         loadVoices()
@@ -271,7 +260,7 @@ function Overlay() {
     if (isMinimized) {
         return (
             <MiniPlayer
-                isPlaying={isPlaying}
+                isPlaying={readerMode === 'speed-reader' ? speedReaderEngine.getIsPlaying() : audio.isPlaying}
                 isMuted={isMuted}
                 onTogglePlay={togglePlayPause}
                 onToggleMute={toggleMute}
@@ -284,14 +273,15 @@ function Overlay() {
         <Player
             // State
             uiState={uiState}
-            isPlaying={isPlaying}
-            currentTime={currentTime}
-            duration={duration}
-            volume={volume}
+            isPlaying={readerMode === 'speed-reader' ? speedReaderEngine.getIsPlaying() : audio.isPlaying}
+            isBuffering={audio.isBuffering}
+            currentTime={audio.currentTime}
+            duration={audio.duration}
+            volume={audio.volume}
             playbackSpeed={playbackSpeed}
             bars={bars}
             text={text}
-            error={error}
+            error={error || audio.error}
             backgroundImage={backgroundImage}
             generationProgress={generationProgress}
             voices={voices}
@@ -307,29 +297,26 @@ function Overlay() {
             onGenerate={handleGenerate}
             onReset={handleReset}
             onSeek={(t) => {
-                setCurrentTime(t) // Optimistic update
-
-                // Calculate and update currentIndex based on seek time
-                // Base rate: ~15 chars/sec at 1x speed, scales with playbackSpeed
+                // Optimistic text update
                 const charsPerSec = 15 * playbackSpeed;
                 const estimatedCharIndex = Math.floor(t * charsPerSec);
                 setCurrentIndex(Math.min(estimatedCharIndex, text.length - 1));
 
-                audioService.seek(t)
-            }} // Syncs both time and text display (speed-aware)
-            onVolumeChange={setVolume}
-            onSpeedChange={setPlaybackSpeed}
+                audio.seek(t);
+            }}
+            onVolumeChange={(v) => {
+                audio.setVolume(v)
+                if (v > 0) setIsMuted(false)
+            }}
+            onSpeedChange={(s) => {
+                setPlaybackSpeed(s)
+                audio.setSpeed(s)
+            }}
             onVoiceSelect={(id) => {
                 setVoiceId(id)
-                // Force stop playback to prevent mixed voice states
-                audioService.stop()
-                setIsPlaying(false)
+                audio.stop()
                 setCurrentIndex(0)
-
-                // If not idle, force back to editing state to allow regeneration
-                if (uiState !== "idle") {
-                    setUiState("editing")
-                }
+                if (uiState !== "idle") setUiState("editing")
             }}
             onRestart={restartPlaylist}
             onToggleEditor={() => {
@@ -338,26 +325,124 @@ function Overlay() {
             }}
             onTextChange={setText}
             onDownload={async () => {
+                setIsDownloading(true);
+                setIsDownloadComplete(false);
                 try {
-                    if (audioService.getProviderName() === "WebSpeechProvider") {
-                        // Native browser TTS cannot be downloaded
-                        alert("Download is only available for Premium Voices (ElevenLabs).");
-                        return;
-                    }
-                    // Trigger download
-                    // We need to disable UI or show loading? 
-                    // For now, fire and forget (it shows browser download pill).
                     await audioService.download(text, voiceId);
+                    setIsDownloadComplete(true);
+                    setTimeout(() => setIsDownloadComplete(false), 2000);
                 } catch (e) {
                     console.error("Download failed", e);
                     alert("Download failed. Check API Key or Network.");
+                } finally {
+                    setIsDownloading(false);
                 }
             }}
+            isDownloading={isDownloading}
+            isDownloadComplete={isDownloadComplete}
             isMuted={isMuted}
             onMuteToggle={toggleMute}
             readerMode={readerMode}
             speedReaderWpm={speedReaderWpm}
             onWpmChange={setSpeedReaderWpm}
+            isSaved={isSaved(sourceUrl || window.location.href)}
+            onSave={() => {
+                if (!isPro) {
+                    alert("Saving to library is a Pro feature.");
+                    return;
+                }
+                const url = sourceUrl || window.location.href;
+                const existingArticle = articles.find(a => a.url === url);
+
+                if (existingArticle) {
+                    removeArticle(existingArticle.id);
+                } else {
+                    // Scrape Metadata
+                    const metadata: any = {
+                        title: document.title || "Untitled Article",
+                        url: url
+                    }
+
+                    try {
+                        // Twitter Specific Scraping
+                        const isTwitter = url.includes("twitter.com") || url.includes("x.com")
+                        if (isTwitter) {
+                            // 1. Extract Tweet ID from URL
+                            // URL formats: /user/status/1234... or /user/status/1234...?s=20
+                            const match = url.match(/status\/(\d+)/)
+                            const tweetId = match ? match[1] : null
+
+                            let article: HTMLElement | null = null;
+
+                            if (tweetId) {
+                                // 2. Find the specific article element that links to this Tweet ID
+                                // Twitter articles usually have a Time element or link pointing to the status
+                                const articles = Array.from(document.querySelectorAll('article'))
+                                article = articles.find(art => {
+                                    // Check for any link to this status ID inside the article
+                                    // Note: We search for the ID but need to be careful not to match replies if we are on a detail page?
+                                    // Actually, on a detail page, the main tweet is usually the one without a parent "Show this thread" context above it?
+                                    // Simple heuristic: Look for <a href*="status/ID">
+                                    return art.querySelector(`a[href*="/status/${tweetId}"]`)
+                                }) as HTMLElement
+                            }
+
+                            // Fallback: If no ID found or article not found (maybe main focused tweet?), try main article
+                            if (!article) {
+                                article = document.querySelector('article[data-testid="tweet"]') as HTMLElement || document.querySelector('article') as HTMLElement
+                            }
+
+                            if (article) {
+                                // Avatar (Scoped to article)
+                                const avatarImg = article.querySelector('[data-testid="Tweet-User-Avatar"] img') as HTMLImageElement
+                                if (avatarImg) metadata.avatar = avatarImg.src
+
+                                // Name & Handle (Scoped to article)
+                                const userLink = article.querySelector('[data-testid="User-Name"]') as HTMLElement
+                                if (userLink) {
+                                    // The text usually contains "Name\n@handle\n..."
+                                    // We need to be careful with formatting
+                                    const rawText = userLink.innerText || ""
+                                    const lines = rawText.split('\n').filter(l => l.trim())
+                                    if (lines.length >= 2) {
+                                        metadata.author = lines[0]
+                                        // Handle usually starts with @ in the text content hidden/visible
+                                        metadata.handle = lines.find(l => l.startsWith('@')) || lines[1]
+                                    }
+                                }
+
+                                // Tweet Text (Title)
+                                // Replace "Untitled Article" with actual tweet text
+                                const tweetText = article.querySelector('[data-testid="tweetText"]') as HTMLElement
+                                if (tweetText) {
+                                    metadata.title = tweetText.innerText.substring(0, 100) + (tweetText.innerText.length > 100 ? "..." : "")
+                                }
+
+                                // Tweet Image (Scoped to article)
+                                const tweetPhoto = article.querySelector('[data-testid="tweetPhoto"] img') as HTMLImageElement
+                                if (tweetPhoto) metadata.image = tweetPhoto.src
+
+                                // Timestamp
+                                // Twitter timestamps are usually in a <time> element
+                                // We try multiple selectors to catch it
+                                const timeEl = article.querySelector('time') as HTMLTimeElement
+                                if (timeEl) {
+                                    metadata.tweetTimestamp = timeEl.getAttribute('datetime')
+                                } else {
+                                    // Fallback: look for generic time string in aria-labels or text
+                                    // But <time> is standard on Twitter web
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Metadata scraping failed", e)
+                    }
+
+                    addArticle({
+                        ...metadata
+                    });
+                }
+            }}
         />
     )
 }

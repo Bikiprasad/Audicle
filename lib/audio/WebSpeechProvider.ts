@@ -3,7 +3,12 @@ import type { AudioProvider, Voice, WordBoundaryEvent } from "./types";
 // Default Web Speech voice
 const DEFAULT_WEB_SPEECH_VOICE = "Google UK English Male";
 
+type EventHandler = (data?: any) => void;
+
 export class WebSpeechProvider implements AudioProvider {
+    // Event System
+    private listeners: Map<string, Set<EventHandler>> = new Map();
+
     private isPlaying: boolean = false;
     private volume: number = 1;
 
@@ -35,7 +40,6 @@ export class WebSpeechProvider implements AudioProvider {
     private utterance: SpeechSynthesisUtterance | null = null;
     private currentVoiceId: string = "";
     private currentSpeed: number = 1;
-    private currentOnBoundary?: (e: WordBoundaryEvent) => void;
     private charsPerSec: number = 15;
 
     // Session Management
@@ -44,6 +48,18 @@ export class WebSpeechProvider implements AudioProvider {
 
     private get synthesis(): SpeechSynthesis {
         return window.speechSynthesis;
+    }
+
+    subscribe(event: string, callback: EventHandler): () => void {
+        if (!this.listeners.has(event)) {
+            this.listeners.set(event, new Set());
+        }
+        this.listeners.get(event)?.add(callback);
+        return () => this.listeners.get(event)?.delete(callback);
+    }
+
+    private emit(event: string, data?: any) {
+        this.listeners.get(event)?.forEach(cb => cb(data));
     }
 
     async getVoices(): Promise<Voice[]> {
@@ -78,6 +94,8 @@ export class WebSpeechProvider implements AudioProvider {
             if (!this.isPlaying || !this.utterance || this.synthesis.paused || this.pauseTime > 0) return;
 
             const now = Date.now();
+            this.emit('timeupdate');
+
             // If we haven't received a real event in > 200ms, use estimation
             if (now - this.lastEventTime > 200) {
                 const elapsedSinceStart = Math.max(0, (now - this.startTime) / 1000);
@@ -86,19 +104,17 @@ export class WebSpeechProvider implements AudioProvider {
                 // Don't overshoot current chunk length
                 const currentLen = this.chunks[this.currentChunkIndex]?.length || 0;
                 if (estimatedCharIndex < currentLen) {
-                    if (this.currentOnBoundary) {
-                        this.currentOnBoundary({
-                            charIndex: this.calculateGlobalCharIndex(estimatedCharIndex),
-                            charLength: 1,
-                            name: 'word' // approximate
-                        });
-                    }
+                    this.emit('boundary', {
+                        charIndex: this.calculateGlobalCharIndex(estimatedCharIndex),
+                        charLength: 1,
+                        name: 'word' // approximate
+                    });
                 }
             }
         }, 100);
     }
 
-    async play(text: string, voiceId: string, speed: number, onBoundary?: (e: WordBoundaryEvent) => void): Promise<void> {
+    async play(text: string, voiceId: string, speed: number): Promise<void> {
         this.stop();
 
         // Give browser a moment
@@ -113,7 +129,6 @@ export class WebSpeechProvider implements AudioProvider {
         this.pauseTime = 0;
         this.currentVoiceId = voiceId;
         this.currentSpeed = speed;
-        this.currentOnBoundary = onBoundary;
         this.lastBoundaryCharIndex = 0;
 
         this.originalChunks = this.splitTextRobustly(text);
@@ -122,6 +137,7 @@ export class WebSpeechProvider implements AudioProvider {
         this.globalCharOffset = 0;  // No seek offset initially
 
         this.startMonitor();
+        this.emit('play');
 
         return new Promise((resolve, reject) => {
             this.sessionResolve = resolve;
@@ -215,23 +231,24 @@ export class WebSpeechProvider implements AudioProvider {
             if (e.name === 'word' || e.name === 'sentence') {
                 this.lastEventTime = Date.now();
                 this.lastBoundaryCharIndex = e.charIndex;
-                if (this.currentOnBoundary) {
-                    this.currentOnBoundary({
-                        charIndex: this.calculateGlobalCharIndex(e.charIndex),
-                        charLength: e.charLength,
-                        name: e.name
-                    });
-                }
+
+                this.emit('boundary', {
+                    charIndex: this.calculateGlobalCharIndex(e.charIndex),
+                    charLength: e.charLength,
+                    name: e.name
+                });
             }
         }
 
         utterance.onend = () => {
+            // System ended naturally
             if (this.isVolumeRestart) {
                 this.isVolumeRestart = false;
                 return;
             }
             if (!this.sessionResolve) return;
 
+            // Mark chunk as done
             this.isPlaying = false;
             this.utterance = null;
 
@@ -249,9 +266,14 @@ export class WebSpeechProvider implements AudioProvider {
             if (this.isVolumeRestart && (e.error === 'canceled' || e.error === 'interrupted')) {
                 return;
             }
+
+            // If genuinely interrupted/cancelled not by us
             this.isPlaying = false;
             this.utterance = null;
+
             if (e.error === 'interrupted' || e.error === 'canceled') return;
+
+            this.emit('error', e);
             if (this.sessionReject) this.sessionReject(e);
         };
 
@@ -265,6 +287,7 @@ export class WebSpeechProvider implements AudioProvider {
     }
 
     private finishSession() {
+        this.emit('ended');
         if (this.sessionResolve) {
             this.sessionResolve();
             this.sessionResolve = null;
@@ -277,6 +300,7 @@ export class WebSpeechProvider implements AudioProvider {
         if (this.isPlaying) {
             this.synthesis.pause();
             this.pauseTime = Date.now();
+            this.emit('pause');
         }
     }
 
@@ -295,6 +319,7 @@ export class WebSpeechProvider implements AudioProvider {
                 this.startTime += pauseDuration;
                 this.pauseTime = 0;
             }
+            this.emit('play');
         }
     }
 
@@ -313,6 +338,7 @@ export class WebSpeechProvider implements AudioProvider {
         this.chunks = [];
         this.currentChunkIndex = 0;
         this.globalCharOffset = 0;
+        this.emit('ended');
     }
 
     getCurrentTime(): number {
@@ -335,22 +361,41 @@ export class WebSpeechProvider implements AudioProvider {
 
     setVolume(volume: number): void {
         this.volume = volume;
+        this.emit('volumechange', volume);
         if (this.isPlaying && this.utterance && !this.synthesis.paused && this.pauseTime === 0) {
-            this.performSmartRestart();
+            // Restart from current estimation
+            const elapsedSinceStart = Math.max(0, (Date.now() - this.startTime) / 1000);
+            const estimatedLocalCharIndex = Math.floor(elapsedSinceStart * this.charsPerSec);
+            const currentChunkStart = this.originalChunks.slice(0, this.currentChunkIndex).reduce((acc, c) => acc + c.length, 0);
+
+            // Calculate where we are legally in the original text
+            // We need to know "where in original text did this current chunk start?"
+            // Actually, `playFromIndex` handles everything if we pass global index.
+            // But simpler: just use `calculateGlobalCharIndex`.
+
+            // Wait, `calculateGlobalCharIndex` uses `globalCharOffset`.
+            // `globalCharOffset` tracks how much we SKIPPED.
+            // So `globalCharOffset` + `localIndex` = Position in Original Text.
+
+            const globalIndex = this.calculateGlobalCharIndex(Math.max(this.lastBoundaryCharIndex, estimatedLocalCharIndex));
+            this.playFromIndex(globalIndex);
         }
     }
 
     setSpeed(speed: number): void {
         if (this.currentSpeed === speed) return;
         this.currentSpeed = speed;
-        // Only restart if accurately speaking
+        this.emit('speedchange', speed);
+
         if (this.isPlaying && this.utterance && !this.synthesis.paused && this.pauseTime === 0) {
             this.charsPerSec = 15 * speed;
-            this.performSmartRestart();
+            // Restart from current pos
+            const elapsedSinceStart = Math.max(0, (Date.now() - this.startTime) / 1000);
+            const estimatedLocalCharIndex = Math.floor(elapsedSinceStart * this.charsPerSec);
+            const globalIndex = this.calculateGlobalCharIndex(Math.max(this.lastBoundaryCharIndex, estimatedLocalCharIndex));
+            this.playFromIndex(globalIndex);
         } else {
-            // Just update calculation basis
             this.charsPerSec = 15 * speed;
-            // If paused, we cancel the current stale utterance so `resume` rebuilds it
             if (this.pauseTime > 0) {
                 this.synthesis.cancel();
                 this.utterance = null;
@@ -363,154 +408,83 @@ export class WebSpeechProvider implements AudioProvider {
         if (time > this.totalEstimatedDuration) time = this.totalEstimatedDuration;
 
         this.accumulatedTime = time;
-        this.startTime = Date.now();
+        // Estimate global char index
+        const estimatedGlobalCharIndex = Math.floor(time * (15 * this.currentSpeed));
 
-        const estimatedGlobalCharIndex = Math.floor(time * this.charsPerSec);
+        this.playFromIndex(estimatedGlobalCharIndex);
+        this.emit('timeupdate');
+    }
 
-        // Find which ORIGINAL chunk this belongs to
+    private playFromIndex(globalStartIndex: number): void {
+        this.isVolumeRestart = true;
+        this.synthesis.cancel();
+
+        // Safe bounds
+        if (globalStartIndex < 0) globalStartIndex = 0;
+        if (globalStartIndex >= this.fullText.length) globalStartIndex = this.fullText.length - 1;
+
+        this.globalCharOffset = globalStartIndex;
+
+        // Find which original chunk this index falls into
         let cumulative = 0;
-        let targetChunk = 0;
-        let localIndex = 0;
+        let targetChunkIndex = 0;
+        let localStartIndex = 0;
 
         for (let i = 0; i < this.originalChunks.length; i++) {
             const len = this.originalChunks[i].length;
-            if (estimatedGlobalCharIndex < cumulative + len) {
-                targetChunk = i;
-                localIndex = estimatedGlobalCharIndex - cumulative;
+            if (globalStartIndex < cumulative + len) {
+                targetChunkIndex = i;
+                localStartIndex = globalStartIndex - cumulative;
                 break;
             }
             cumulative += len;
         }
 
-        // Set the global offset to the seek position
-        this.globalCharOffset = estimatedGlobalCharIndex;
-        this.currentChunkIndex = targetChunk;
-        this.lastBoundaryCharIndex = localIndex;
-
-        // Rebuild working chunks from seek position
-        this.rebuildChunksFromSeek(targetChunk, localIndex);
-
-        // If playing, restart immediately
-        if (this.isPlaying && this.pauseTime === 0) {
-            this.performSeekRestart();
-        } else {
-            // If paused, just clear current utterance so resume() starts fresh
-            this.synthesis.cancel();
-            this.utterance = null;
-        }
-    }
-
-    private rebuildChunksFromSeek(chunkIndex: number, localCharIndex: number): void {
-        // Create new working chunks starting from seek position
+        // Rebuild chunks:
+        // 1. Target chunk (sliced from localStartIndex)
+        // 2. All subsequent chunks
         this.chunks = [];
 
-        if (chunkIndex < this.originalChunks.length) {
-            // First chunk is the remainder of the target chunk from localCharIndex
-            const targetChunk = this.originalChunks[chunkIndex];
+        // Slice target chunk to start at correct word boundary (approx)
+        const targetChunk = this.originalChunks[targetChunkIndex];
+        let sliceIndex = localStartIndex;
 
-            // Find word boundary to start from (don't cut mid-word)
-            let startIndex = localCharIndex;
-            if (startIndex > 0 && startIndex < targetChunk.length) {
-                // Look for previous space to start at word boundary
-                const spaceIndex = targetChunk.lastIndexOf(' ', startIndex);
-                if (spaceIndex > 0) {
-                    startIndex = spaceIndex + 1;
-                }
-            }
-
-            const remainder = targetChunk.substring(startIndex).trim();
-            if (remainder.length > 0) {
-                this.chunks.push(remainder);
-            }
-
-            // Add all subsequent original chunks
-            for (let i = chunkIndex + 1; i < this.originalChunks.length; i++) {
-                this.chunks.push(this.originalChunks[i]);
-            }
+        // Robust word boundary: try to start after a space if we are in middle of text
+        if (sliceIndex > 0 && sliceIndex < targetChunk.length) {
+            const lastSpace = targetChunk.lastIndexOf(" ", sliceIndex);
+            if (lastSpace >= 0) sliceIndex = lastSpace + 1;
         }
 
-        // Reset chunk index since we rebuilt the array
+        // Adjust global offset slightly if we moved the slice point
+        const adjustment = sliceIndex - localStartIndex;
+        // actually if we move backward (lastIndexOf), we are re-playing some chars.
+        // globalCharOffset represents "how many chars of original text are BEFORE the current chunks[0][0]"?
+        // So globalCharOffset should come from cumulative + sliceIndex.
+        this.globalCharOffset = cumulative + sliceIndex;
+
+        const firstChunk = targetChunk.substring(sliceIndex);
+        if (firstChunk.trim()) {
+            this.chunks.push(firstChunk);
+        }
+
+        // Add remaining original chunks
+        for (let i = targetChunkIndex + 1; i < this.originalChunks.length; i++) {
+            this.chunks.push(this.originalChunks[i]);
+        }
+
         this.currentChunkIndex = 0;
-    }
+        this.lastBoundaryCharIndex = 0;
 
-    private performSeekRestart(): void {
-        this.isVolumeRestart = true;
-        this.synthesis.cancel();
-
-        setTimeout(() => {
+        // If we were playing, restart. If paused, we just prepped the state.
+        if (this.isPlaying && this.pauseTime === 0) {
+            setTimeout(() => {
+                this.isVolumeRestart = false;
+                this.startTime = Date.now();
+                this.playNextChunk();
+            }, 50);
+        } else {
+            this.utterance = null;
             this.isVolumeRestart = false;
-            this.startTime = Date.now();
-            this.playNextChunk();
-        }, 50);
-    }
-
-    private jumpToChunkForIndex(globalIndex: number) {
-        // Internal helper reused by seek, kept for logic reference but seek() now inlines the logic
-        // We can remove it or keep it for future.
-        let cumulative = 0;
-        let targetChunk = 0;
-        let localIndex = 0;
-
-        for (let i = 0; i < this.chunks.length; i++) {
-            const len = this.chunks[i].length;
-            if (globalIndex < cumulative + len) {
-                targetChunk = i;
-                localIndex = globalIndex - cumulative;
-                break;
-            }
-            cumulative += len;
         }
-
-        this.currentChunkIndex = targetChunk;
-        this.lastBoundaryCharIndex = localIndex;
-
-        this.performSmartRestart(true);
-    }
-
-    private performSmartRestart(forceIndex: boolean = false) {
-        this.isVolumeRestart = true;
-        this.synthesis.cancel();
-
-        const elapsedSinceStart = Math.max(0, (Date.now() - this.startTime) / 1000);
-        const estimatedLocalCharIndex = Math.floor(elapsedSinceStart * this.charsPerSec);
-
-        const currentText = this.chunks[this.currentChunkIndex];
-        if (!currentText) {
-            this.isVolumeRestart = false;
-            return;
-        }
-
-        const safeLimit = Math.max(0, currentText.length - 10);
-
-        const restartLocalIndex = Math.min(
-            safeLimit,
-            forceIndex ? this.lastBoundaryCharIndex : Math.max(this.lastBoundaryCharIndex, estimatedLocalCharIndex)
-        );
-
-        setTimeout(() => {
-            this.isVolumeRestart = false;
-
-            let sliceIndex = restartLocalIndex;
-            if (restartLocalIndex > 0 && restartLocalIndex < currentText.length) {
-                const lastSpace = currentText.lastIndexOf(" ", restartLocalIndex);
-                if (lastSpace > 0) sliceIndex = lastSpace + 1;
-            }
-
-            // Update global offset to account for skipped characters
-            this.globalCharOffset += sliceIndex;
-
-            const remainder = currentText.substring(sliceIndex).trim();
-
-            if (remainder.length > 0) {
-                this.chunks[this.currentChunkIndex] = remainder;
-            } else {
-                this.currentChunkIndex++;
-            }
-
-            this.lastBoundaryCharIndex = 0;
-            this.startTime = Date.now();
-
-            this.playNextChunk();
-        }, 50);
     }
 }

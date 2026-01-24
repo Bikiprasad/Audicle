@@ -6,17 +6,20 @@ import { cn } from "~lib/utils"
 import "./style.css"
 
 function IndexPopup() {
-  const { apiKey, showOverlay, isElevenLabsEnabled, readerMode, setApiKey, setShowOverlay, setIsElevenLabsEnabled, setReaderMode } = useSettings()
+  const { apiKey, showOverlay, isElevenLabsEnabled, readerMode, kokoroUrl, isKokoroEnabled, setApiKey, setShowOverlay, setIsElevenLabsEnabled, setReaderMode, setKokoroUrl, setIsKokoroEnabled } = useSettings()
   const [localKey, setLocalKey] = useState("")
+  const [localKokoroUrl, setLocalKokoroUrl] = useState("")
   const [isSaved, setIsSaved] = useState(false)
 
   useEffect(() => {
     if (apiKey) setLocalKey(apiKey)
-  }, [apiKey])
+    if (kokoroUrl) setLocalKokoroUrl(kokoroUrl)
+  }, [apiKey, kokoroUrl])
 
 
   const handleSave = () => {
     setApiKey(localKey)
+    setKokoroUrl(localKokoroUrl)
     setIsSaved(true)
     setTimeout(() => setIsSaved(false), 2000)
   }
@@ -56,6 +59,27 @@ function IndexPopup() {
 
       {/* Content */}
       <div className="relative z-10 flex-1 px-6 py-4 space-y-4">
+
+        {/* Dashboard Link */}
+        <button
+          onClick={() => chrome.runtime.openOptionsPage()}
+          className="w-full flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-white/10 hover:border-white/20 transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+              <span className="text-white font-bold text-[10px]">A</span>
+            </div>
+            <div className="flex flex-col items-start">
+              <span className="text-[11px] font-bold text-white uppercase tracking-wider">Open Dashboard</span>
+              <span className="text-[9px] text-zinc-500">Voice Studio & Library</span>
+            </div>
+          </div>
+          <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-400 group-hover:text-white">
+              <path d="M7 17l9.2-9.2M17 17V7H7" />
+            </svg>
+          </div>
+        </button>
 
         {/* Reader Mode Toggle */}
         <div className="p-3 rounded-xl bg-white/5 border border-white/5">
@@ -129,6 +153,47 @@ function IndexPopup() {
                 <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 opacity-0 group-focus-within:opacity-100 pointer-events-none transition-opacity duration-500" />
               </div>
             </div>
+
+            {/* Kokoro Engine */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 mt-4">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Kokoro TTS</span>
+                <span className="text-[9px] text-zinc-600 font-mono mt-0.5">
+                  Self-Hosted / Local
+                </span>
+              </div>
+              <button
+                onClick={() => setIsKokoroEnabled(!isKokoroEnabled)}
+                className={cn(
+                  "w-10 h-5 rounded-full relative transition-all duration-300 shadow-inner",
+                  isKokoroEnabled ? "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.3)]" : "bg-zinc-700"
+                )}
+              >
+                <div className={cn(
+                  "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300",
+                  isKokoroEnabled ? "left-[22px]" : "left-0.5"
+                )} />
+              </button>
+            </div>
+
+            {/* Kokoro URL */}
+            <div className={cn("space-y-2 transition-all duration-300", isKokoroEnabled ? "opacity-100" : "opacity-30 pointer-events-none grayscale")}>
+              <label className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+                <Power size={10} className={kokoroUrl ? "text-orange-500" : "text-zinc-600"} />
+                Kokoro API URL
+              </label>
+              <div className="group relative">
+                <input
+                  type="text"
+                  value={localKokoroUrl}
+                  onChange={(e) => setLocalKokoroUrl(e.target.value)}
+                  placeholder="http://localhost:8880"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-[12px] font-mono text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:border-orange-500/50 focus:bg-black/60 transition-all shadow-[inset_0_2px_5px_rgba(0,0,0,0.2)]"
+                />
+                <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-orange-500/10 to-red-500/10 opacity-0 group-focus-within:opacity-100 pointer-events-none transition-opacity duration-500" />
+              </div>
+            </div>
+            {/* End Kokoro */}
           </>
         )}
       </div>

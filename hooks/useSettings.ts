@@ -10,6 +10,10 @@ export interface Settings {
     isElevenLabsEnabled?: boolean
     readerMode: ReaderMode
     speedReaderWpm: number
+    // Kokoro Settings
+    kokoroUrl?: string
+    isKokoroEnabled?: boolean
+    isPro?: boolean // Pro Tier Flag
 }
 
 // Settings that persist to storage (NO showOverlay)
@@ -18,7 +22,10 @@ const DEFAULT_SETTINGS: Settings = {
     voiceId: "21m00Tcm4TlvDq8ikWAM",
     playbackSpeed: 1.0,
     readerMode: 'audio',
-    speedReaderWpm: 400
+    speedReaderWpm: 400,
+    kokoroUrl: "http://localhost:8880", // Default assumption
+    isKokoroEnabled: false,
+    isPro: true // Default Enabled for Testing
 }
 
 export const useSettings = () => {
@@ -81,12 +88,17 @@ export const useSettings = () => {
         speedReaderWpm: settings.speedReaderWpm,
         showOverlay, // Session-only, always false on page load
         isElevenLabsEnabled: settings.isElevenLabsEnabled !== undefined ? settings.isElevenLabsEnabled : true,
+        kokoroUrl: settings.kokoroUrl || "http://localhost:8880",
+        isKokoroEnabled: settings.isKokoroEnabled || false,
         setApiKey: (key: string) => updateSettings({ elevenLabsApiKey: key }),
         setVoiceId: (id: string) => updateSettings({ voiceId: id }),
         setPlaybackSpeed: (speed: number) => updateSettings({ playbackSpeed: speed }),
         setReaderMode: (mode: ReaderMode) => updateSettings({ readerMode: mode }),
         setSpeedReaderWpm: (wpm: number) => updateSettings({ speedReaderWpm: wpm }),
         setShowOverlay: setShowOverlayState, // Session-only setter (no storage)
-        setIsElevenLabsEnabled: (enabled: boolean) => updateSettings({ isElevenLabsEnabled: enabled })
+        setIsElevenLabsEnabled: (enabled: boolean) => updateSettings({ isElevenLabsEnabled: enabled }),
+        setKokoroUrl: (url: string) => updateSettings({ kokoroUrl: url }),
+        setIsKokoroEnabled: (enabled: boolean) => updateSettings({ isKokoroEnabled: enabled }),
+        isPro: settings.isPro ?? true
     }
 }

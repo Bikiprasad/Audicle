@@ -1,10 +1,12 @@
 import { motion, AnimatePresence } from "framer-motion"
-import { Play, Pause, X, Minus, ScanSearch, Zap, Loader2, SkipBack, Edit3, Volume2, VolumeX, Download, RotateCcw, BookOpen } from "lucide-react"
+import { Play, Pause, X, Minus, ScanSearch, Zap, Loader2, SkipBack, Edit3, Volume2, VolumeX, Download, RotateCcw, BookOpen, Check, Bookmark, BookmarkCheck } from "lucide-react"
 import { cn } from "~lib/utils"
 import type { ReaderMode } from "~hooks/useSettings"
 // import type { Voice } from "~lib/audio/types"
 import { Tooltip } from "./Tooltip"
 import { VoiceSelector } from "./VoiceSelector"
+import { SpeedReaderDisplay } from "./SpeedReaderDisplay"
+import { ParagraphHighlighter } from "./ParagraphHighlighter"
 
 interface PlayerProps {
     uiState: "idle" | "generating" | "editing" | "ready"
@@ -40,10 +42,15 @@ interface PlayerProps {
     onRestart: () => void
     onToggleEditor: () => void
     onTextChange: (text: string) => void
+    onSave?: () => void
+    isSaved?: boolean
     onDownload?: () => void
+    isDownloading?: boolean
+    isDownloadComplete?: boolean
     onErrorClear?: () => void
     isMuted: boolean
     onMuteToggle: () => void
+    isBuffering?: boolean
     // Speed Reader Mode
     readerMode: ReaderMode
     speedReaderWpm: number
@@ -79,9 +86,14 @@ export const Player = ({
     onRestart,
     onToggleEditor,
     onTextChange,
+    onSave,
+    isSaved,
     onDownload,
+    isDownloading,
+    isDownloadComplete,
     isMuted,
     onMuteToggle,
+    isBuffering,
     readerMode,
     speedReaderWpm,
     onWpmChange
@@ -180,67 +192,17 @@ export const Player = ({
                                 </div>
                             </div>
                         ) : uiState === "ready" ? (
-                            <div className="w-full h-full relative flex flex-col items-center justify-center">
-                                {/* MARKER LINES */}
-                                <div className="absolute top-0 bottom-0 left-1/2 w-0 border-l border-white/20 h-full z-0 flex flex-col justify-between py-2 pointer-events-none">
-                                    <div className="w-[1px] h-3 bg-white/60 -ml-[0.5px]" />
-                                    <div className="w-[1px] h-3 bg-white/60 -ml-[0.5px]" />
+                            readerMode === 'speed-reader' ? (
+                                <SpeedReaderDisplay text={text} currentIndex={currentIndex} />
+                            ) : (
+                                <div className="absolute inset-0 flex flex-col">
+                                    {/* Overlay Gradient for readability */}
+                                    <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-black to-transparent z-10 pointer-events-none" />
+                                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black to-transparent z-10 pointer-events-none" />
+
+                                    <ParagraphHighlighter text={text} currentIndex={currentIndex} />
                                 </div>
-
-                                <div className="text-[42px] font-serif leading-none flex items-center z-10 w-full whitespace-nowrap">
-                                    {(() => {
-                                        // 1. Find the current word based on currentIndex
-                                        const safeIndex = Math.min(Math.max(0, currentIndex), text.length - 1);
-                                        // Simple boundary check: scan back/forward for space
-                                        const isSpace = (i: number) => /\s/.test(text[i] || " ");
-
-                                        let start = safeIndex;
-                                        while (start > 0 && !isSpace(start - 1)) start--;
-
-                                        let end = safeIndex;
-                                        while (end < text.length && !isSpace(end)) end++;
-
-                                        const rawWord = text.slice(start, end);
-                                        const word = rawWord.trim();
-
-                                        if (!word) return <span className="w-full text-center text-zinc-600 text-lg font-sans">...</span>;
-
-                                        // 2. ORP Calculation (Standardized)
-                                        let orpIndex = 0;
-                                        const len = word.length;
-                                        if (len <= 1) orpIndex = 0;
-                                        else if (len <= 5) orpIndex = 1;
-                                        else if (len <= 9) orpIndex = 2;
-                                        else if (len <= 13) orpIndex = 3;
-                                        else orpIndex = 4;
-
-                                        if (orpIndex >= len) orpIndex = len - 1;
-
-                                        const leftPart = word.slice(0, orpIndex);
-                                        const orpChar = word[orpIndex];
-                                        const rightPart = word.slice(orpIndex + 1);
-
-                                        return (
-                                            <div className="flex w-full items-baseline justify-center">
-                                                {/* Left Side (Align Right to Touch Center) */}
-                                                <div className="flex-1 text-right">
-                                                    <span className="text-white">{leftPart}</span>
-                                                </div>
-
-                                                {/* ORP (Centered) */}
-                                                <div className="w-[1ch] text-center text-red-500 font-bold shrink-0 mx-0">
-                                                    {orpChar}
-                                                </div>
-
-                                                {/* Right Side (Align Left to Touch Center) */}
-                                                <div className="flex-1 text-left">
-                                                    <span className="text-white">{rightPart}</span>
-                                                </div>
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
+                            )
                         ) : null}
                     </div>
 
@@ -346,11 +308,13 @@ export const Player = ({
                                     {uiState === "editing" && <Zap size={18} className="text-orange-500" />}
                                     {uiState === "generating" && <Loader2 size={18} className="text-blue-500 animate-spin" />}
                                     {uiState === "ready" && (
-                                        isPlaying
-                                            ? <Pause size={22} className="text-white fill-white" />
-                                            : isFinished
-                                                ? <RotateCcw size={22} className="text-white" />
-                                                : <Play size={22} className="text-white ml-0.5 fill-white" />
+                                        isBuffering
+                                            ? <Loader2 size={22} className="text-white animate-spin" />
+                                            : isPlaying
+                                                ? <Pause size={22} className="text-white fill-white" />
+                                                : isFinished
+                                                    ? <RotateCcw size={22} className="text-white" />
+                                                    : <Play size={22} className="text-white ml-0.5 fill-white" />
                                     )}
                                 </motion.button>
                             </Tooltip>
@@ -450,13 +414,31 @@ export const Player = ({
                             </button>
                         </Tooltip>
 
+                        <Tooltip text={isSaved ? "Saved" : "Save to Library"}>
+                            <button
+                                onClick={onSave}
+                                className={cn(
+                                    "w-9 h-9 rounded-full border flex items-center justify-center transition-all",
+                                    isSaved
+                                        ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
+                                        : "bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10"
+                                )}
+                            >
+                                {isSaved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                            </button>
+                        </Tooltip>
+
                         <Tooltip text="Download MP3">
                             <button
                                 onClick={onDownload}
-                                disabled={uiState !== "ready"}
+                                disabled={uiState !== "ready" || isDownloading}
                                 className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-30"
                             >
-                                <Download size={14} />
+                                {isDownloading
+                                    ? <Loader2 size={14} className="animate-spin text-blue-400" />
+                                    : isDownloadComplete
+                                        ? <Check size={14} className="text-green-400" />
+                                        : <Download size={14} />}
                             </button>
                         </Tooltip>
                     </div>

@@ -6,7 +6,8 @@ export const useTwitterInjector = (
     setUiState: (state: any) => void,
     setBackgroundImage: (url: string | null) => void,
     setShowOverlay: (show: boolean) => void,
-    loadVoices: () => void
+    loadVoices: () => void,
+    setSourceUrl: (url: string) => void
 ) => {
     useEffect(() => {
         if (!window.location.hostname.includes("x.com")) return
@@ -130,8 +131,17 @@ export const useTwitterInjector = (
                                 .replace(/\s+/g, ' ')
                                 .trim()
 
+                            // EXTRACT URL (New Logic)
+                            let tweetUrl = window.location.href;
+                            const timeElement = article.querySelector('time');
+                            if (timeElement) {
+                                const link = timeElement.closest('a');
+                                if (link) tweetUrl = link.href;
+                            }
+
                             if (extractedText && extractedText.length > 10) {
                                 setText(extractedText)
+                                setSourceUrl(tweetUrl) // Update Store with Permalink
                                 setUiState("editing")
                                 setBackgroundImage(imgUrl || "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=2070&auto=format&fit=crop")
                                 setShowOverlay(true)

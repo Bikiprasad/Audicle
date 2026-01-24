@@ -1,7 +1,7 @@
 export interface Voice {
     id: string;
     name: string;
-    provider: 'web-speech' | 'elevenlabs';
+    provider: 'web-speech' | 'elevenlabs' | 'kokoro';
     nativeVoiceObj?: any; // For WebSpeech
 }
 
@@ -12,15 +12,29 @@ export interface WordBoundaryEvent {
 }
 
 export interface AudioProvider {
-    play(text: string, voiceId: string, speed: number, onBoundary?: (e: WordBoundaryEvent) => void): Promise<void>;
+    subscribe(event: string, callback: (data?: any) => void): () => void;
+
+    play(text: string, voiceId: string, speed: number): Promise<void>;
     pause(): void;
     resume(): void;
     stop(): void;
+    seek(time: number): void;
+    setVolume(volume: number): void;
+    setSpeed(speed: number): void;
+
     getVoices(): Promise<Voice[]>;
-    getCurrentTime?(): number;
-    getDuration?(): number;
-    getDuration?(): number;
-    setVolume?(volume: number): void;
-    seek?(time: number): void;
+    getCurrentTime(): number;
+    getDuration(): number;
     download?(text: string, voiceId: string): Promise<void>;
 }
+
+export type PlayerEvent =
+    | 'play'
+    | 'pause'
+    | 'timeupdate'
+    | 'ended'
+    | 'waiting'
+    | 'error'
+    | 'boundary'
+    | 'volumechange'
+    | 'speedchange';
