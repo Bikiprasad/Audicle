@@ -1,5 +1,5 @@
 # Audicle
-> **Turn the Web into Your Personal Podcast.**
+> **Turn the Web into Your Personal Podcast with Audicle.**
 > *Local-First Neural Text-to-Speech for Articles & Tweets.*
 
 ![Audicle Banner](/assets/icon.png)
