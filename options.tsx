@@ -1,22 +1,15 @@
 import React, { useState, useEffect, useMemo } from "react"
 import { useSettings } from "~hooks/useSettings"
 import { useReadingList } from "~hooks/useReadingList"
-import { useAnalytics } from "~hooks/useAnalytics"
+import { useAnalytics, AnalyticsService } from "~hooks/useAnalytics"
 import { HomeIcon, LayersIcon, PieChartIcon, SettingsIcon } from "~lib/icons"
 import { cn } from "~lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 import { Cloud, Shield, Play, Trash2, ArrowUpRight, Github, Coffee, Zap, BookOpen, Mic, Sun, Moon, TerminalSquare } from "lucide-react"
 import "./style.css"
 
-// Voices Config (re-using old voice map)
-const KOKORO_VOICES = [
-    { name: 'Bella', id: 'af_bella', description: 'American Female, Natural' },
-    { name: 'Michael', id: 'am_michael', description: 'American Male, Deep' },
-    { name: 'Sarah', id: 'af_sarah', description: 'American Female, Soft' },
-    { name: 'Adam', id: 'am_adam', description: 'American Male, Authoritative' },
-    { name: 'Emma', id: 'bf_emma', description: 'British Female, Proper' },
-    { name: 'Lewis', id: 'bm_lewis', description: 'British Male, Narrator' },
-];
+// Voices Config
+import { KOKORO_VOICES } from "~lib/constants"
 
 function OptionsIndex() {
     const { theme, setTheme } = useSettings()
@@ -689,61 +682,56 @@ const VoiceStudio = () => {
 }
 
 const AnalyticsView = () => {
-    const { data } = useAnalytics()
+    const { data, getWords, getTokens, getGrowthTrend } = useAnalytics()
     const fmt = (n: number) => new Intl.NumberFormat('en-US').format(n)
 
-    const maxVal = Math.max(data.byModel.kokoro, data.byModel.elevenlabs, 1)
-    const kPercent = (data.byModel.kokoro / maxVal) * 100
-    const ePercent = (data.byModel.elevenlabs / maxVal) * 100
 
+    // Calculate Percentages
+    // Calculate Percentages
+    const kokoroVal = data?.byModel?.kokoro ?? 0
+    const elevenVal = data?.byModel?.elevenlabs ?? 0
+    const webVal = data?.byModel?.webspeech ?? 0
 
+    const maxVal = Math.max(kokoroVal, elevenVal, webVal, 1)
+    const kPercent = (kokoroVal / maxVal) * 100
+    const ePercent = (elevenVal / maxVal) * 100
+    const wPercent = (webVal / maxVal) * 100
 
-    // Process Daily History
+    const growth = getGrowthTrend()
+    const isGrowthPositive = growth >= 0
+
+    // Process Daily History (Words)
     const dailyStats = React.useMemo(() => {
-        const stats: Record<string, { kokoro: number, elevenlabs: number }> = {}
+        const stats: Record<string, { words: number }> = {}
         const now = new Date()
+        const toISODate = (date: Date) => date.toISOString().split('T')[0];
 
-        // Helper to get YYYY-MM-DD
-        const toISODate = (date: Date) => date.toISOString().split('T')[0]
-
-        // Group by YYYY-MM-DD
-        data.history.forEach(h => {
-            // Ensure valid date
+        (data.history || []).forEach(h => {
             const d = new Date(h.timestamp)
             if (isNaN(d.getTime())) return
 
             const dateKey = toISODate(d)
-            if (!stats[dateKey]) stats[dateKey] = { kokoro: 0, elevenlabs: 0 }
-            if (h.model === 'kokoro') stats[dateKey].kokoro += h.chars
-            if (h.model === 'elevenlabs') stats[dateKey].elevenlabs += h.chars
+            if (!stats[dateKey]) stats[dateKey] = { words: 0 }
+
+            stats[dateKey].words += getWords(h.chars)
         })
 
-        // Generate last 7 days keys (YYYY-MM-DD)
         const last7Days = Array.from({ length: 7 }, (_, i) => {
             const d = new Date(now.getTime() - (6 - i) * 24 * 60 * 60 * 1000)
             return toISODate(d)
         })
 
         return last7Days.map(dateKey => ({
-            date: dateKey, // This is YYYY-MM-DD
-            kokoro: stats[dateKey]?.kokoro || 0,
-            elevenlabs: stats[dateKey]?.elevenlabs || 0
+            date: dateKey,
+            words: stats[dateKey]?.words || 0
         }))
 
-    }, [data.history])
+    }, [data.history, getWords])
 
-    const maxDaily = Math.max(1, ...dailyStats.map(d => d.kokoro + d.elevenlabs))
+    const maxDaily = Math.max(1, ...dailyStats.map(d => d.words))
 
-    // Helper to format display date safely
     const formatDisplayDate = (isoDate: string) => {
         const d = new Date(isoDate)
-        // Add timezone offset compensation to prevent day shift if needed, 
-        // but YYYY-MM-DD is UTC based in ISO, so new Date("2024-01-24") is treated as UTC in some contexts.
-        // Better: parse explicitly.
-        // Actually new Date("YYYY-MM-DD") is usually UTC. 
-        // toLocaleDateString() uses local time, so it might shift.
-        // Hack: Append T00:00:00 to ensure local handling or just use UTC methods.
-        // Let's stick to simple formatting:
         return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
     }
 
@@ -774,34 +762,63 @@ const AnalyticsView = () => {
                 animate="show"
                 className="grid grid-cols-3 gap-6"
             >
-                {/* ... Cards content same ... */}
                 <motion.div variants={item}>
-                    <Card title="Total Usage" value={`${fmt(data.totalChars)} chars`} change="+12.5%" isPositive>
-                        <div className="h-16 mt-4">
-                            <svg viewBox="0 0 100 40" className="w-full h-full overflow-visible">
-                                <path d="M0 30 C 20 20, 40 40, 60 10 S 80 5, 100 25" fill="none" stroke="#6366f1" strokeWidth="2" />
-                                <circle cx="100" cy="25" r="3" fill="#6366f1" />
+                    <Card
+                        title="Words Consumed"
+                        value={`${fmt(getWords(data?.totalChars || 0))}`}
+                        change={`${isGrowthPositive ? '+' : ''}${growth}% (24h)`}
+                        isPositive={isGrowthPositive}
+                    >
+                        <div className="h-16 mt-4 relative group">
+                            <svg viewBox="0 0 100 40" className="w-full h-full overflow-visible opacity-50 group-hover:opacity-100 transition-opacity">
+                                <path d="M0 30 C 20 25, 40 35, 60 15 S 80 5, 100 20" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400 dark:text-slate-600" />
                             </svg>
                         </div>
                     </Card>
                 </motion.div>
+
                 <motion.div variants={item}>
-                    <Card title="Kokoro (Local)" value={fmt(data.byModel.kokoro)}>
-                        <div className="mt-6 flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-orange-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-orange-500" style={{ width: `${kPercent}%` }} />
+                    <Card title="Est. Tokens" value={fmt(getTokens(data?.totalChars || 0))}>
+                        <div className="mt-6 space-y-3">
+                            {/* Kokoro Bar */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] w-12 font-bold text-gray-400">LOCAL</span>
+                                <div className="flex-1 h-1.5 bg-orange-100 rounded-full overflow-hidden dark:bg-orange-500/10">
+                                    <div className="h-full bg-orange-500" style={{ width: `${kPercent}%` }} />
+                                </div>
                             </div>
-                            <span className="text-xs font-bold text-orange-600">{Math.round(kPercent)}%</span>
+                            {/* ElevenLabs Bar */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] w-12 font-bold text-gray-400">CLOUD</span>
+                                <div className="flex-1 h-1.5 bg-blue-100 rounded-full overflow-hidden dark:bg-blue-500/10">
+                                    <div className="h-full bg-blue-500" style={{ width: `${ePercent}%` }} />
+                                </div>
+                            </div>
+                            {/* WebSpeech Bar */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] w-12 font-bold text-gray-400">NATIVE</span>
+                                <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden dark:bg-gray-700">
+                                    <div className="h-full bg-gray-400" style={{ width: `${wPercent}%` }} />
+                                </div>
+                            </div>
                         </div>
                     </Card>
                 </motion.div>
+
                 <motion.div variants={item}>
-                    <Card title="ElevenLabs (Cloud)" value={fmt(data.byModel.elevenlabs)}>
-                        <div className="mt-6 flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden dark:bg-white/10">
-                                <div className="h-full bg-slate-900 dark:bg-white" style={{ width: `${ePercent}%` }} />
+                    <Card title="Listening Time" value={(getWords(data?.totalChars || 0) / 150).toFixed(1) + " hrs"}>
+                        <div className="mt-6 flex items-center justify-center">
+                            <div className="relative w-16 h-16 flex items-center justify-center">
+                                <svg className="w-full h-full transform -rotate-90">
+                                    <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-gray-100 dark:text-gray-800" />
+                                    <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none"
+                                        strokeDasharray={175}
+                                        strokeDashoffset={175 - (175 * 0.75)}
+                                        className="text-green-500"
+                                    />
+                                </svg>
+                                <span className="absolute text-xs font-bold text-green-600">Active</span>
                             </div>
-                            <span className="text-xs font-bold text-slate-900 dark:text-white">{Math.round(ePercent)}%</span>
                         </div>
                     </Card>
                 </motion.div>
@@ -812,24 +829,19 @@ const AnalyticsView = () => {
                 <div className="flex justify-between items-center mb-8">
                     <div>
                         <h3 className="text-lg font-bold text-slate-800 dark:text-white">Daily Usage</h3>
-                        <p className="text-xs text-gray-400 dark:text-zinc-500">Character consumption per day (Last 7 Days)</p>
+                        <p className="text-xs text-gray-400 dark:text-zinc-500">Words consumption per day (Last 7 Days)</p>
                     </div>
                     <div className="flex gap-4">
                         <div className="flex items-center gap-2">
                             <div className="w-3 h-3 rounded-full bg-orange-500" />
-                            <span className="text-xs font-bold text-gray-500 dark:text-zinc-400">Kokoro</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-blue-500" />
-                            <span className="text-xs font-bold text-gray-500 dark:text-zinc-400">ElevenLabs</span>
+                            <span className="text-xs font-bold text-gray-500 dark:text-zinc-400">Words</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="h-64 flex items-end justify-between gap-4 px-4">
                     {dailyStats.map((d, i) => {
-                        const hKokoro = (d.kokoro / maxDaily) * 100
-                        const hEleven = (d.elevenlabs / maxDaily) * 100
+                        const hWords = (d.words / maxDaily) * 100
                         const dateLabel = formatDisplayDate(d.date)
 
                         return (
@@ -837,18 +849,13 @@ const AnalyticsView = () => {
                                 {/* Tooltip */}
                                 <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg whitespace-nowrap z-10 pointer-events-none dark:bg-zinc-800">
                                     <div className="font-bold">{d.date}</div>
-                                    <div className="text-orange-300">Kokoro: {fmt(d.kokoro)}</div>
-                                    <div className="text-blue-300">ElevenLabs: {fmt(d.elevenlabs)}</div>
+                                    <div className="text-orange-300">Words: {fmt(d.words)}</div>
                                 </div>
 
                                 {/* Stacked Bar */}
                                 <div className="w-full max-w-[40px] h-full flex flex-col justify-end rounded-t-lg overflow-hidden bg-gray-50 relative dark:bg-white/5">
                                     <motion.div
-                                        initial={{ height: 0 }} animate={{ height: `${hEleven}%` }}
-                                        className="w-full bg-blue-500 hover:bg-blue-600 transition-colors"
-                                    />
-                                    <motion.div
-                                        initial={{ height: 0 }} animate={{ height: `${hKokoro}%` }}
+                                        initial={{ height: 0 }} animate={{ height: `${hWords}%` }}
                                         className="w-full bg-orange-500 hover:bg-orange-600 transition-colors"
                                     />
                                 </div>
@@ -871,7 +878,7 @@ const AnalyticsView = () => {
                         <tr className="text-gray-400 text-xs uppercase tracking-wider text-left dark:text-zinc-500">
                             <th className="pb-4 font-normal pl-4">Time</th>
                             <th className="pb-4 font-normal">Model</th>
-                            <th className="pb-4 font-normal">Characters</th>
+                            <th className="pb-4 font-normal">Words</th>
                             <th className="pb-4 font-normal">Status</th>
                         </tr>
                     </thead>
@@ -891,10 +898,10 @@ const AnalyticsView = () => {
                                         <div className="text-xs text-gray-400 dark:text-zinc-600">{timeStr}</div>
                                     </td>
                                     <td className="py-4 flex items-center gap-2">
-                                        <div className={cn("w-2 h-2 rounded-full", h.model === 'kokoro' ? "bg-orange-500" : "bg-blue-500")} />
+                                        <div className={cn("w-2 h-2 rounded-full", h.model === 'kokoro' ? "bg-orange-500" : h.model === 'elevenlabs' ? "bg-blue-500" : "bg-gray-400")} />
                                         <span className="text-slate-900 capitalize dark:text-zinc-200">{h.model}</span>
                                     </td>
-                                    <td className="py-4 text-slate-900 font-bold dark:text-zinc-200">{fmt(h.chars)}</td>
+                                    <td className="py-4 text-slate-900 font-bold dark:text-zinc-200">{fmt(getWords(h.chars))}</td>
                                     <td className="py-4">
                                         <span className="px-2 py-1 rounded text-xs font-bold bg-green-50 text-green-600 dark:bg-green-500/10 dark:text-green-400">
                                             Recorded
@@ -1051,7 +1058,7 @@ const LibraryView = () => {
 }
 
 const SettingsView = () => {
-    const { apiKey, kokoroUrl, isKokoroEnabled, isElevenLabsEnabled, setApiKey, setKokoroUrl, setIsKokoroEnabled, setIsElevenLabsEnabled } = useSettings()
+    const { apiKey, kokoroUrl, isKokoroEnabled, isElevenLabsEnabled, videoQuality, setVideoQuality, setApiKey, setKokoroUrl, setIsKokoroEnabled, setIsElevenLabsEnabled } = useSettings()
 
     return (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-2xl space-y-6">
@@ -1118,7 +1125,51 @@ const SettingsView = () => {
                     )}
                 </AnimatePresence>
             </div>
-        </motion.div>
+
+
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 dark:bg-zinc-900/50 dark:border-white/5 dark:shadow-none">
+                <div className="flex items-center gap-4 mb-6">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                            <line x1="8" y1="21" x2="16" y2="21" />
+                            <line x1="12" y1="17" x2="12" y2="21" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-white">Video Export Quality</h3>
+                        <p className="text-sm text-gray-500 dark:text-zinc-500">Choose resolution for generated videos.</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <button
+                        onClick={() => setVideoQuality('720p')}
+                        className={cn(
+                            "px-4 py-3 rounded-xl border flex items-center justify-between transition-all",
+                            videoQuality === '720p'
+                                ? "bg-slate-900 border-slate-900 text-white shadow-lg dark:bg-white dark:border-white dark:text-black"
+                                : "bg-gray-50 border-gray-200 text-slate-600 hover:bg-white hover:border-gray-300 dark:bg-black/40 dark:border-white/10 dark:text-zinc-400"
+                        )}
+                    >
+                        <span className="font-bold">720p HD</span>
+                        {videoQuality === '720p' && <div className="w-2 h-2 rounded-full bg-white dark:bg-black" />}
+                    </button>
+                    <button
+                        onClick={() => setVideoQuality('1080p')}
+                        className={cn(
+                            "px-4 py-3 rounded-xl border flex items-center justify-between transition-all",
+                            videoQuality === '1080p'
+                                ? "bg-slate-900 border-slate-900 text-white shadow-lg dark:bg-white dark:border-white dark:text-black"
+                                : "bg-gray-50 border-gray-200 text-slate-600 hover:bg-white hover:border-gray-300 dark:bg-black/40 dark:border-white/10 dark:text-zinc-400"
+                        )}
+                    >
+                        <span className="font-bold">1080p Full HD</span>
+                        {videoQuality === '1080p' && <div className="w-2 h-2 rounded-full bg-white dark:bg-black" />}
+                    </button>
+                </div>
+            </div>
+        </motion.div >
     )
 }
 

@@ -55,10 +55,10 @@ function Overlay() {
     const [error, setError] = useState<string | null>(null)
     const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
 
-    // Local UI State
     const [isMinimized, setIsMinimized] = useState(false)
     const [isMuted, setIsMuted] = useState(false)
     const [showEditor, setShowEditor] = useState(false)
+    const [metadata, setMetadata] = useState<any>(null) // Article Metadata (Author, Handle, Avatar)
 
     // Highlight State
     const [currentIndex, setCurrentIndex] = useState(0)
@@ -82,10 +82,13 @@ function Overlay() {
         }
     }
 
-    // Load voices when Overlay is shown
+    // Load voices & metadata when Overlay is shown
     useEffect(() => {
         if (showOverlay) {
             loadVoices()
+            // Try to scrape metadata immediately upon opening
+            const meta = scrapeMetadata()
+            setMetadata(meta)
         }
     }, [showOverlay, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, readerMode])
 
@@ -95,7 +98,7 @@ function Overlay() {
     }, [uiState])
 
     // --- Twitter Injection ---
-    useTwitterInjector(setText, setUiState, setBackgroundImage, setShowOverlay, loadVoices, setSourceUrl)
+    useTwitterInjector(setText, setUiState, setBackgroundImage, setShowOverlay, loadVoices, setSourceUrl, setMetadata)
 
     // --- Word Boundary Sync ---
     useEffect(() => {
@@ -135,6 +138,15 @@ function Overlay() {
     }
 
     const handleGenerate = async () => {
+        // Only scrape if we don't have metadata yet (e.g. non-Twitter page)
+        if (!metadata) {
+            const meta = scrapeMetadata()
+            console.log("Audicle: Metadata Scraped (Fallback)", meta)
+            setMetadata(meta)
+        } else {
+            console.log("Audicle: Using Existing Metadata", metadata)
+        }
+
         setUiState("generating")
         setGenerationProgress(0, 100)
 
@@ -302,7 +314,13 @@ function Overlay() {
             currentIndex={currentIndex}
 
             // Handlers
-            onClose={() => setShowOverlay(false)}
+            onClose={() => {
+                setShowOverlay(false)
+                audio.stop()
+                if (readerMode === 'speed-reader' && speedReaderEngine.getIsPlaying()) {
+                    speedReaderEngine.pause()
+                }
+            }}
             onMinimize={() => setIsMinimized(true)}
             onPlayPause={togglePlayPause}
             onImport={handleImport}
@@ -369,94 +387,77 @@ function Overlay() {
                 if (existingArticle) {
                     removeArticle(existingArticle.id);
                 } else {
-                    // Scrape Metadata
-                    const metadata: any = {
-                        title: document.title || "Untitled Article",
-                        url: url
-                    }
-
-                    try {
-                        // Twitter Specific Scraping
-                        const isTwitter = url.includes("twitter.com") || url.includes("x.com")
-                        if (isTwitter) {
-                            // 1. Extract Tweet ID from URL
-                            // URL formats: /user/status/1234... or /user/status/1234...?s=20
-                            const match = url.match(/status\/(\d+)/)
-                            const tweetId = match ? match[1] : null
-
-                            let article: HTMLElement | null = null;
-
-                            if (tweetId) {
-                                // 2. Find the specific article element that links to this Tweet ID
-                                // Twitter articles usually have a Time element or link pointing to the status
-                                const articles = Array.from(document.querySelectorAll('article'))
-                                article = articles.find(art => {
-                                    // Check for any link to this status ID inside the article
-                                    // Note: We search for the ID but need to be careful not to match replies if we are on a detail page?
-                                    // Actually, on a detail page, the main tweet is usually the one without a parent "Show this thread" context above it?
-                                    // Simple heuristic: Look for <a href*="status/ID">
-                                    return art.querySelector(`a[href*="/status/${tweetId}"]`)
-                                }) as HTMLElement
-                            }
-
-                            // Fallback: If no ID found or article not found (maybe main focused tweet?), try main article
-                            if (!article) {
-                                article = document.querySelector('article[data-testid="tweet"]') as HTMLElement || document.querySelector('article') as HTMLElement
-                            }
-
-                            if (article) {
-                                // Avatar (Scoped to article)
-                                const avatarImg = article.querySelector('[data-testid="Tweet-User-Avatar"] img') as HTMLImageElement
-                                if (avatarImg) metadata.avatar = avatarImg.src
-
-                                // Name & Handle (Scoped to article)
-                                const userLink = article.querySelector('[data-testid="User-Name"]') as HTMLElement
-                                if (userLink) {
-                                    // The text usually contains "Name\n@handle\n..."
-                                    // We need to be careful with formatting
-                                    const rawText = userLink.innerText || ""
-                                    const lines = rawText.split('\n').filter(l => l.trim())
-                                    if (lines.length >= 2) {
-                                        metadata.author = lines[0]
-                                        // Handle usually starts with @ in the text content hidden/visible
-                                        metadata.handle = lines.find(l => l.startsWith('@')) || lines[1]
-                                    }
-                                }
-
-                                // Tweet Text (Title)
-                                // Replace "Untitled Article" with actual tweet text
-                                const tweetText = article.querySelector('[data-testid="tweetText"]') as HTMLElement
-                                if (tweetText) {
-                                    metadata.title = tweetText.innerText.substring(0, 100) + (tweetText.innerText.length > 100 ? "..." : "")
-                                }
-
-                                // Tweet Image (Scoped to article)
-                                const tweetPhoto = article.querySelector('[data-testid="tweetPhoto"] img') as HTMLImageElement
-                                if (tweetPhoto) metadata.image = tweetPhoto.src
-
-                                // Timestamp
-                                // Twitter timestamps are usually in a <time> element
-                                // We try multiple selectors to catch it
-                                const timeEl = article.querySelector('time') as HTMLTimeElement
-                                if (timeEl) {
-                                    metadata.tweetTimestamp = timeEl.getAttribute('datetime')
-                                } else {
-                                    // Fallback: look for generic time string in aria-labels or text
-                                    // But <time> is standard on Twitter web
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.warn("Metadata scraping failed", e)
-                    }
-
-                    addArticle({
-                        ...metadata
-                    });
+                    const metadata = scrapeMetadata();
+                    addArticle({ ...metadata });
                 }
             }}
+            metadata={metadata} // Pass to Player
         />
     )
+}
+
+function scrapeMetadata(): any {
+    const url = window.location.href;
+    const metadata: any = {
+        title: document.title || "Untitled Article",
+        url: url
+    }
+
+    try {
+        const isTwitter = url.includes("twitter.com") || url.includes("x.com")
+        if (isTwitter) {
+            const match = url.match(/status\/(\d+)/)
+            const tweetId = match ? match[1] : null
+            let article: HTMLElement | null = null;
+
+            if (tweetId) {
+                const articles = Array.from(document.querySelectorAll('article'))
+                article = articles.find(art => art.querySelector(`a[href*="/status/${tweetId}"]`)) as HTMLElement
+            }
+
+            if (!article) {
+                article = document.querySelector('article[data-testid="tweet"]') as HTMLElement || document.querySelector('article') as HTMLElement
+            }
+
+            if (article) {
+                const avatarImg = article.querySelector('[data-testid="Tweet-User-Avatar"] img') as HTMLImageElement
+                if (avatarImg) metadata.avatar = avatarImg.src
+
+                const userLink = article.querySelector('[data-testid="User-Name"]') as HTMLElement
+                if (userLink) {
+                    const rawText = userLink.innerText || ""
+                    const lines = rawText.split('\n').filter(l => l.trim())
+                    if (lines.length >= 2) {
+                        metadata.author = lines[0]
+                        metadata.handle = lines.find(l => l.startsWith('@')) || lines[1]
+                    }
+                }
+
+                // Try grabbing high-res profile pic
+                // Twitter avatars are usually small. Replace _normal or _mini with _400x400
+                if (metadata.avatar) {
+                    metadata.avatar = metadata.avatar.replace('_normal', '_400x400').replace('_mini', '_400x400');
+                }
+
+                // Tweet Text (Title)
+                // Replace "Untitled Article" with actual tweet text
+                const tweetText = article.querySelector('[data-testid="tweetText"]') as HTMLElement
+                if (tweetText) {
+                    metadata.title = tweetText.innerText.substring(0, 100) + (tweetText.innerText.length > 100 ? "..." : "")
+                }
+
+                // Tweet Image (Scoped to article)
+                const tweetPhoto = article.querySelector('[data-testid="tweetPhoto"] img') as HTMLImageElement
+                if (tweetPhoto) metadata.image = tweetPhoto.src
+
+                const timeEl = article.querySelector('time') as HTMLTimeElement
+                if (timeEl) metadata.tweetTimestamp = timeEl.getAttribute('datetime')
+            }
+        }
+    } catch (e) {
+        console.warn("Metadata scraping failed", e)
+    }
+    return metadata;
 }
 
 export default Overlay

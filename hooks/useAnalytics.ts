@@ -1,9 +1,4 @@
-import { useStorage } from "@plasmohq/storage/hook"
-import { Storage } from "@plasmohq/storage"
-
-const storage = new Storage({
-    area: "local"
-})
+import { useState, useEffect } from "react"
 
 export interface HistoryItem {
     timestamp: string // ISO Date String
@@ -31,65 +26,150 @@ const DEFAULT_DATA: AnalyticsData = {
     history: []
 }
 
-
+const STORAGE_KEY = "audicle-analytics-v1"
 
 export const useAnalytics = () => {
-    const [data] = useStorage<AnalyticsData>("audicle-analytics-v1", (stored) => {
-        if (!stored) return DEFAULT_DATA
+    const [data, setData] = useState<AnalyticsData>(DEFAULT_DATA)
 
-        // Robust Migration:
-        // Filter out any history items that don't have a valid ISO timestamp or are missing 'timestamp' field.
-        // We do NOT wipe the whole array, just drop bad items.
-        // We also don't need to write back here explicitly because useStorage syncs state, 
-        // BUT if we want to clean the actual storage, we might need a useEffect side-effect or just let valid new items append.
-        // Since we can't easily async write back in this initial transform, we'll just filter for the view.
+    // Load initial data
+    useEffect(() => {
+        chrome.storage.local.get(STORAGE_KEY, (result) => {
+            if (result[STORAGE_KEY]) {
+                const stored = result[STORAGE_KEY]
 
-        let safeHistory = stored.history || []
+                // Robust Migration / Validation
+                let safeHistory = stored.history || []
+                const hasLegacy = safeHistory.some((h: any) => !h.timestamp)
+                if (hasLegacy) {
+                    safeHistory = safeHistory.filter((h: any) => !!h.timestamp)
+                }
 
-        // Check if any items are legacy (missing timestamp)
-        const hasLegacy = safeHistory.some(h => !(h as any).timestamp)
+                // Merge with defaults
+                const merged: AnalyticsData = {
+                    ...DEFAULT_DATA,
+                    ...stored,
+                    byModel: {
+                        ...DEFAULT_DATA.byModel,
+                        ...(stored.byModel || {})
+                    },
+                    history: safeHistory
+                }
 
-        if (hasLegacy) {
-            safeHistory = safeHistory.filter(h => !!(h as any).timestamp)
+                setData(merged)
+            }
+        })
+    }, [])
+
+    // Listen for changes
+    useEffect(() => {
+        const onChange = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
+            if (area === "local" && changes[STORAGE_KEY]) {
+                const newValue = changes[STORAGE_KEY].newValue
+                if (newValue) {
+                    // Re-apply migration logic just in case
+                    let safeHistory = newValue.history || []
+                    const hasLegacy = safeHistory.some((h: any) => !h.timestamp)
+                    if (hasLegacy) {
+                        safeHistory = safeHistory.filter((h: any) => !!h.timestamp)
+                    }
+
+                    // Merge with defaults to ensure all fields exist
+                    const merged: AnalyticsData = {
+                        ...DEFAULT_DATA,
+                        ...newValue,
+                        byModel: {
+                            ...DEFAULT_DATA.byModel,
+                            ...(newValue.byModel || {})
+                        },
+                        history: safeHistory
+                    }
+
+                    setData(merged)
+                }
+            }
         }
+        chrome.storage.onChanged.addListener(onChange)
+        return () => chrome.storage.onChanged.removeListener(onChange)
+    }, [])
 
-        return {
-            ...stored,
-            history: safeHistory
-        }
-    })
+    const getWords = (chars: number) => Math.round(chars / 5)
+    const getTokens = (chars: number) => Math.round(chars / 4)
 
-    return { data: data || DEFAULT_DATA }
+    const getGrowthTrend = () => {
+        if (!data || !data.history) return 0
+
+        const now = new Date()
+        const oneDay = 24 * 60 * 60 * 1000
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+        const yesterdayStart = todayStart - oneDay
+
+        const todayChars = data.history
+            .filter(h => new Date(h.timestamp).getTime() >= todayStart)
+            .reduce((acc, curr) => acc + curr.chars, 0)
+
+        const yesterdayChars = data.history
+            .filter(h => {
+                const t = new Date(h.timestamp).getTime()
+                return t >= yesterdayStart && t < todayStart
+            })
+            .reduce((acc, curr) => acc + curr.chars, 0)
+
+        if (yesterdayChars === 0) return todayChars > 0 ? 100 : 0
+        return Math.round(((todayChars - yesterdayChars) / yesterdayChars) * 100)
+    }
+
+    return {
+        data,
+        getWords,
+        getTokens,
+        getGrowthTrend
+    }
 }
 
 export const AnalyticsService = {
     trackUsage: async (model: 'kokoro' | 'elevenlabs' | 'webspeech', chars: number) => {
-        const stored = await storage.get<AnalyticsData>("audicle-analytics-v1") || DEFAULT_DATA
+        console.log(`[Analytics] Tracking usage: ${model} +${chars} chars`);
+
+        // Get current (promisified chrome.storage)
+        const result = await new Promise<{ [key: string]: any }>((resolve) => {
+            chrome.storage.local.get(STORAGE_KEY, resolve)
+        })
+
+        const stored: AnalyticsData = result[STORAGE_KEY] || DEFAULT_DATA
         const now = new Date().toISOString()
 
-        const newData = {
+        const newData: AnalyticsData = {
             ...stored,
             totalChars: stored.totalChars + chars,
             byModel: {
-                ...stored.byModel,
-                [model]: (stored.byModel[model] || 0) + chars
+                ...DEFAULT_DATA.byModel,
+                ...(stored.byModel || {}),
+                [model]: ((stored.byModel || {})[model] || 0) + chars
             },
             history: [
-                ...stored.history,
+                ...(stored.history || []),
                 { timestamp: now, model, chars }
             ]
         }
 
-        // Limit history to last 1000 entries to prevent storage bloat?
+        console.log("[Analytics] New Data:", newData);
+
+        // Limit history to last 1000 entries
         if (newData.history.length > 1000) {
             newData.history = newData.history.slice(-1000)
         }
 
-        await storage.set("audicle-analytics-v1", newData)
+        await new Promise<void>((resolve) => {
+            chrome.storage.local.set({ [STORAGE_KEY]: newData }, resolve)
+        })
+
         return newData
     },
 
     getStats: async () => {
-        return await storage.get<AnalyticsData>("audicle-analytics-v1") || DEFAULT_DATA
+        const result = await new Promise<{ [key: string]: any }>((resolve) => {
+            chrome.storage.local.get(STORAGE_KEY, resolve)
+        })
+        return result[STORAGE_KEY] || DEFAULT_DATA
     }
 }

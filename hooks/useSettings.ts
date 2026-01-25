@@ -15,6 +15,7 @@ export interface Settings {
     kokoroUrl?: string
     isKokoroEnabled?: boolean
     isPro?: boolean // Pro Tier Flag
+    videoQuality: '720p' | '1080p'
     theme?: Theme
 }
 
@@ -28,6 +29,7 @@ const DEFAULT_SETTINGS: Settings = {
     kokoroUrl: "http://localhost:8880", // Default assumption
     isKokoroEnabled: false,
     isPro: true, // Default Enabled for Testing
+    videoQuality: '720p',
     theme: 'dark' // Default to dark for now
 }
 
@@ -104,6 +106,8 @@ export const useSettings = () => {
         setIsKokoroEnabled: (enabled: boolean) => updateSettings({ isKokoroEnabled: enabled }),
         isPro: settings.isPro ?? true,
         theme: settings.theme || 'dark',
-        setTheme: (theme: Theme) => updateSettings({ theme })
+        setTheme: (theme: Theme) => updateSettings({ theme }),
+        videoQuality: settings.videoQuality || '720p',
+        setVideoQuality: (q: '720p' | '1080p') => updateSettings({ videoQuality: q })
     }
 }

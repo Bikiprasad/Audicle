@@ -5,7 +5,7 @@ type EventHandler = (data?: any) => void;
 
 export class ElevenLabsProvider implements AudioProvider {
     private apiKey: string;
-    private isPlaying: boolean = false;
+    public isPlaying: boolean = false;
     private volume: number = 1;
 
     // Event System

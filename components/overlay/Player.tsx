@@ -1,12 +1,15 @@
 import { motion, AnimatePresence } from "framer-motion"
-import { Play, Pause, X, Minus, ScanSearch, Zap, Loader2, SkipBack, Edit3, Volume2, VolumeX, Download, RotateCcw, BookOpen, Check, Bookmark, BookmarkCheck } from "lucide-react"
+import { Play, Pause, X, Minus, ScanSearch, Zap, Loader2, SkipBack, Edit3, Volume2, VolumeX, Download, RotateCcw, BookOpen, Check, Bookmark, BookmarkCheck, Clapperboard } from "lucide-react"
+import { useState } from "react"
 import { cn } from "~lib/utils"
-import type { ReaderMode } from "~hooks/useSettings"
+// import { useSettings, type ReaderMode } from "~hooks/useSettings" 
+import { useSettings, type ReaderMode } from "../../hooks/useSettings"
 // import type { Voice } from "~lib/audio/types"
 import { Tooltip } from "./Tooltip"
 import { VoiceSelector } from "./VoiceSelector"
 import { SpeedReaderDisplay } from "./SpeedReaderDisplay"
 import { ParagraphHighlighter } from "./ParagraphHighlighter"
+import { VideoExporter } from "~lib/video/VideoExporter"
 
 interface PlayerProps {
     uiState: "idle" | "generating" | "editing" | "ready"
@@ -24,6 +27,7 @@ interface PlayerProps {
     backgroundImage: string | null
     generationProgress: { current: number, total: number }
     voices: any[]
+    metadata?: any // { author, handle, avatar, ... }
     voiceId: string
     showEditor: boolean // Local UI state or passed down?
     currentIndex: number // for word highlighting
@@ -70,6 +74,7 @@ export const Player = ({
     backgroundImage,
     generationProgress,
     voices,
+    metadata,
     voiceId,
     showEditor,
     currentIndex,
@@ -99,6 +104,12 @@ export const Player = ({
     onWpmChange
 }: PlayerProps) => {
 
+    // Video Export
+    const { videoQuality } = useSettings()
+    const [isExporting, setIsExporting] = useState(false)
+    const [exportProgress, setExportProgress] = useState(0)
+    const [isExportComplete, setIsExportComplete] = useState(false)
+
     const isFinished = uiState === "ready" && !isPlaying && duration > 0 && currentTime >= (duration - 0.2);
 
     const formatTime = (seconds: number) => {
@@ -106,6 +117,77 @@ export const Player = ({
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
+
+    const handleExportVideo = async () => {
+        try {
+            setIsExporting(true)
+            setIsExportComplete(false)
+            setExportProgress(0)
+
+            // Validate Voice
+            const currentVoiceFn = voices.find(v => v.id === voiceId)
+            if (!currentVoiceFn || currentVoiceFn.provider === 'web-speech') {
+                alert("Video export is only available for Kokoro and ElevenLabs voices.")
+                setIsExporting(false)
+                return
+            }
+
+            // Exporter
+            const exporter = new VideoExporter()
+
+            // Fetch Blob
+            let audioUrl = ""
+            if (currentVoiceFn.provider === 'kokoro') {
+                const response = await fetch(`http://localhost:8880/v1/audio/speech`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        input: text,
+                        voice: voiceId,
+                        model: 'kokoro',
+                        response_format: 'mp3'
+                    })
+                })
+                if (!response.ok) throw new Error("Failed to generate audio for video")
+                const blob = await response.blob()
+                audioUrl = URL.createObjectURL(blob)
+            } else {
+                alert("For this demo, only Kokoro Local voices are supported for video export.")
+                setIsExporting(false)
+                return
+            }
+
+            const videoBlob = await exporter.export(
+                audioUrl,
+                text, // Pass full text for Tweet UI
+                metadata?.handle || currentVoiceFn.name, // Use handle if available, else voice
+                metadata?.author || "Audicle", // User real name
+                metadata?.avatar, // User avatar URL
+                videoQuality, // '720p' | '1080p'
+                setExportProgress
+            )
+
+            // Download
+            const url = URL.createObjectURL(videoBlob as Blob)
+            const a = document.createElement("a")
+            a.href = url
+            a.download = `audicle-export-${Date.now()}.mp4`
+            a.click()
+
+            // Success State
+            setIsExportComplete(true)
+            setTimeout(() => {
+                setIsExportComplete(false)
+                setExportProgress(0)
+            }, 3000)
+
+        } catch (e) {
+            console.error(e)
+            alert("Video Export Failed: " + (e instanceof Error ? e.message : String(e)))
+        } finally {
+            setIsExporting(false)
+        }
+    }
 
     return (
         <motion.div
@@ -422,6 +504,50 @@ export const Player = ({
                             >
                                 {isSaved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
                             </button>
+                        </Tooltip>
+
+                        <Tooltip text={isExportComplete ? "Export Complete" : "Export Video (MP4)"}>
+                            <div className="relative w-9 h-9">
+                                {/* Progress Ring (Background) */}
+                                {isExporting && (
+                                    <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 36 36">
+                                        <circle
+                                            cx="18" cy="18" r="17"
+                                            fill="none" stroke="currentColor" strokeWidth="2"
+                                            className="text-white/10"
+                                        />
+                                        <circle
+                                            cx="18" cy="18" r="17"
+                                            fill="none" stroke="currentColor" strokeWidth="2"
+                                            strokeDasharray="100"
+                                            strokeDashoffset={100 - exportProgress}
+                                            className="text-emerald-500 transition-all duration-300 ease-out"
+                                        />
+                                    </svg>
+                                )}
+
+                                <button
+                                    onClick={handleExportVideo}
+                                    disabled={uiState !== "ready" || isExporting || voices.find(v => v.id === voiceId)?.provider === 'web-speech'}
+                                    className={cn(
+                                        "w-full h-full rounded-full flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed z-10 relative",
+                                        isExporting || isExportComplete ? "bg-transparent" : "bg-white/5 border border-white/10 hover:text-white hover:bg-white/10 text-zinc-400"
+                                    )}
+                                >
+                                    {isExporting ? (
+                                        <div className="flex flex-col items-center justify-center">
+                                            <span className="text-[8px] font-bold text-emerald-400 font-mono">
+                                                {Math.round(exportProgress)}%
+                                            </span>
+                                        </div>
+                                    ) : isExportComplete ? (
+                                        <Check size={16} className="text-emerald-500 animate-in zoom-in spin-in-90 duration-300" />
+                                    ) : (
+                                        // Video Icon
+                                        <Clapperboard size={14} />
+                                    )}
+                                </button>
+                            </div>
                         </Tooltip>
 
                         <Tooltip text="Download MP3">

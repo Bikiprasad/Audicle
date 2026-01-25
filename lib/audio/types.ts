@@ -3,6 +3,7 @@ export interface Voice {
     name: string;
     provider: 'web-speech' | 'elevenlabs' | 'kokoro';
     nativeVoiceObj?: any; // For WebSpeech
+    description?: string;
 }
 
 export interface WordBoundaryEvent {

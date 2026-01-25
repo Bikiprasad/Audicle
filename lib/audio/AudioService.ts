@@ -154,7 +154,20 @@ class AudioService {
         }
 
         const results = await Promise.all(promises);
-        return results.flat();
+        const allVoices = results.flat();
+
+        // Sort: ElevenLabs > Kokoro > Web Speech
+        const providerPriority = {
+            'elevenlabs': 0,
+            'kokoro': 1,
+            'web-speech': 2
+        };
+
+        return allVoices.sort((a, b) => {
+            const priorityA = providerPriority[a.provider] ?? 99;
+            const priorityB = providerPriority[b.provider] ?? 99;
+            return priorityA - priorityB;
+        });
     }
 
     async play(text: string, voiceId: string, speed: number, apiKey?: string, isElevenLabsEnabled: boolean = true, kokoroUrl?: string, isKokoroEnabled: boolean = false): Promise<void> {
@@ -162,11 +175,10 @@ class AudioService {
 
         // Analytics Tracking
         try {
-            const provider = this.currentProviderName;
-            // Only track valid providers, maybe exclude webspeech if desired, but good to have all data
-            if (provider === 'kokoro' || provider === 'elevenlabs') {
-                AnalyticsService.trackUsage(provider, text.length);
-            }
+            const current = this.currentProviderName;
+            // Track all providers (normalize 'web-speech' -> 'webspeech')
+            const analyticsModel = current === 'web-speech' ? 'webspeech' : current;
+            AnalyticsService.trackUsage(analyticsModel, text.length);
         } catch (e) {
             console.error("Analytics Error", e);
         }

@@ -1,5 +1,6 @@
 
 import type { AudioProvider, Voice } from "./types";
+import { KOKORO_VOICES } from "~lib/constants";
 
 export class KokoroProvider implements AudioProvider {
     private baseUrl: string;
@@ -43,22 +44,9 @@ export class KokoroProvider implements AudioProvider {
     }
 
     async getVoices(): Promise<Voice[]> {
-        try {
-            const defaults: Voice[] = [
-                { id: "af_bella", name: "Bella (American Female)", provider: "kokoro" },
-                { id: "af_sarah", name: "Sarah (American Female)", provider: "kokoro" },
-                { id: "am_michael", name: "Michael (American Male)", provider: "kokoro" },
-                { id: "am_adam", name: "Adam (American Male)", provider: "kokoro" },
-                { id: "bf_emma", name: "Emma (British Female)", provider: "kokoro" },
-                { id: "bf_isabella", name: "Isabella (British Female)", provider: "kokoro" },
-                { id: "bm_lewis", name: "Lewis (British Male)", provider: "kokoro" },
-                { id: "bm_george", name: "George (British Male)", provider: "kokoro" },
-            ];
-            return defaults;
-        } catch (e) {
-            console.warn("Kokoro: Failed to fetch voices, using defaults", e);
-            return [];
-        }
+        // Return static list for now, since we don't need to fetch from API every time
+        // (The API endpoint exists but our static list has better metadata/descriptions)
+        return KOKORO_VOICES;
     }
 
     private playSessionId: number = 0;

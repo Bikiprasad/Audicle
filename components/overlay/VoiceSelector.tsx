@@ -29,11 +29,17 @@ export const VoiceSelector = ({ voices, currentVoiceId, onVoiceSelect, disabled 
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shrink-0">
                             <Volume1 size={14} className="text-white" />
                         </div>
-                        <div className="text-left">
+                        <div className="text-left overflow-hidden">
                             <p className="text-[11px] text-zinc-500 uppercase tracking-wider font-semibold">Voice Persona</p>
-                            <p className="text-[13px] text-white font-medium truncate w-40">
-                                {voices.find(v => v.id === currentVoiceId)?.name || "Select Voice"}
-                            </p>
+                            <div className="flex flex-col">
+                                <p className="text-[13px] text-white font-medium truncate w-40">
+                                    {voices.find(v => v.id === currentVoiceId)?.name || "Select Voice"}
+                                </p>
+                                {/* Description for selected voice */}
+                                <p className="text-[10px] text-zinc-400 truncate w-40">
+                                    {voices.find(v => v.id === currentVoiceId)?.description || ""}
+                                </p>
+                            </div>
                         </div>
                     </div>
                     <div className={cn("text-zinc-600 transition-transform duration-300", showVoiceSelect ? "rotate-90" : "")}>
@@ -74,8 +80,27 @@ export const VoiceSelector = ({ voices, currentVoiceId, onVoiceSelect, disabled 
                                                     : "text-zinc-400 hover:bg-white/5 hover:text-white"
                                             )}
                                         >
-                                            <span>{v.name}</span>
-                                            {currentVoiceId === v.id && <div className="w-2 h-2 bg-blue-500 rounded-full" />}
+                                            <div className="flex flex-col text-left gap-0.5">
+                                                <span className="font-medium text-[13px]">{v.name}</span>
+                                                {v.description && <span className="text-[10px] text-zinc-500">{v.description}</span>}
+                                            </div>
+
+                                            <div className="flex items-center gap-3 ml-auto">
+                                                {/* Provider Badge */}
+                                                <span className={cn(
+                                                    "text-[9px] px-1.5 py-0.5 rounded-[4px] uppercase font-bold tracking-wider opacity-80",
+                                                    v.provider === 'web-speech' ? "bg-zinc-800 text-zinc-400" :
+                                                        v.provider === 'elevenlabs' ? "bg-blue-900/30 text-blue-300 border border-blue-500/20" :
+                                                            "bg-orange-900/30 text-orange-300 border border-orange-500/20" // Kokoro
+                                                )}>
+                                                    {v.provider === 'web-speech' ? 'Web Speech' :
+                                                        v.provider === 'elevenlabs' ? 'Elevenlabs' : 'Kokoro TTS'}
+                                                </span>
+
+                                                {currentVoiceId === v.id && (
+                                                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+                                                )}
+                                            </div>
                                         </button>
                                     ))}
                                 </div>

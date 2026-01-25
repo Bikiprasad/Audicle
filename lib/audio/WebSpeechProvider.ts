@@ -9,7 +9,7 @@ export class WebSpeechProvider implements AudioProvider {
     // Event System
     private listeners: Map<string, Set<EventHandler>> = new Map();
 
-    private isPlaying: boolean = false;
+    public isPlaying: boolean = false;
     private volume: number = 1;
 
     // Monitor State
