@@ -15,7 +15,7 @@
 
 It bridges the gap between web content and neural audio by integrating:
 1.  **Local Inference**: Use [Kokoro-82M](https://github.com/remsky/Kokoro-FastAPI) for free, private, offline synthesis.
-2.  **Cloud Quality**: Optional integration with **ElevenLabs** for premium voices.
+2.  **Premium Voice Quality**: Optional integration with **ElevenLabs** for premium voices.
 3.  **RSVP Speed Reading**: Consume text at 3x speed with visual guides.
 
 ## Key Features
@@ -116,6 +116,6 @@ This project uses **Plasmo**, a framework for browser extensions.
 MIT License. Open Source software.
 
 ## Credits
-- **Engineering**: Bikiprasad
 - **Model**: [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)
+- **Kokoro FastAPI**: https://github.com/remsky/Kokoro-FastAPI
 - **Framework**: [Plasmo](https://docs.plasmo.com)
