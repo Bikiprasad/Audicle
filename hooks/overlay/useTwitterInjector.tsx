@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import type { usePlayerStore } from "~store/usePlayerStore"
+import { cleanText } from "~lib/parser"
 
 export const useTwitterInjector = (
     setText: (text: string) => void,
@@ -107,6 +108,15 @@ export const useTwitterInjector = (
                             // Remove noise
                             clone.querySelectorAll('[data-testid="User-Name"], [data-testid="socialContext"], [role="group"], time, [data-testid="card.wrapper"]').forEach(el => el.remove())
 
+                            // Remove Quoted Tweets (prevent extracting text from the quote instead of the main tweet)
+                            // Quoted tweets are typically distinct interactive blocks (div[role="link"]) that act as a nested tweet
+                            clone.querySelectorAll('div[role="link"]').forEach(el => {
+                                // If this link block contains tweet text or user info, it's likely a quote card or embedded tweet
+                                if (el.querySelector('[data-testid="tweetText"]') || el.querySelector('[data-testid="User-Name"]')) {
+                                    el.remove();
+                                }
+                            });
+
                             let extractedText = ""
                             // Strategy A: data-text (Articles)
                             const dataText = Array.from(clone.querySelectorAll('[data-text="true"]'))
@@ -125,11 +135,8 @@ export const useTwitterInjector = (
                                 extractedText = clonedTweetText ? clonedTweetText.textContent || "" : (clone as HTMLElement).innerText
                             }
 
-                            // Clean Unicode/Emoji noise and normalize
-                            extractedText = extractedText
-                                .replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, '')
-                                .replace(/\s+/g, ' ')
-                                .trim()
+                            // Clean using centralized logic (Smart Filtering)
+                            extractedText = cleanText(extractedText);
 
                             // EXTRACT URL (New Logic)
                             let tweetUrl = window.location.href;

@@ -214,6 +214,16 @@ class AudioService {
         return this.currentProviderName;
     }
 
+    isPlaying(): boolean {
+        // We need to track this locally or ask provider?
+        // Providers usually don't expose isPlaying directly in interface, but they track it.
+        // Let's add it to AudioProvider interface if missing, or track via events.
+        // Actually, WebSpeechProvider has isPlaying prop?
+        // Let's rely on internal tracking for now since we listen to all events.
+        // Or better: ask provider.
+        return (this.provider as any).isPlaying || false;
+    }
+
     getPlaybackRate(): number {
         return this._playbackRate;
     }

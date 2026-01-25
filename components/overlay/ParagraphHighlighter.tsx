@@ -10,16 +10,48 @@ export const ParagraphHighlighter: React.FC<ParagraphHighlighterProps> = ({ text
     const containerRef = useRef<HTMLDivElement>(null);
     const activeWordRef = useRef<HTMLSpanElement>(null);
 
-    // Auto-scroll to active word
+    const targetScrollTop = useRef(0);
+    const isScrolling = useRef(false);
+
+    // Auto-scroll loop
     useEffect(() => {
-        if (activeWordRef.current && containerRef.current) {
-            // Smooth scroll or instant? Instant is better for syncing.
-            // But we want to keep it centered vertically if possible.
-            activeWordRef.current.scrollIntoView({
-                behavior: "smooth",
-                block: "center",
-                inline: "nearest"
-            });
+        if (!activeWordRef.current || !containerRef.current) return;
+
+        const container = containerRef.current;
+        const element = activeWordRef.current;
+
+        // Calculate target to center the element
+        // We use offsetTop. Ensure container is relative/positioned if needed, 
+        // effectively offsetTop is usually from the top of the scrollable content area.
+        const middleOffset = container.offsetHeight / 2;
+        const target = element.offsetTop - middleOffset + (element.offsetHeight / 2);
+
+        targetScrollTop.current = target;
+
+        if (!isScrolling.current) {
+            isScrolling.current = true;
+
+            const animateScroll = () => {
+                if (!containerRef.current) {
+                    isScrolling.current = false;
+                    return;
+                }
+
+                const current = containerRef.current.scrollTop;
+                const dist = targetScrollTop.current - current;
+
+                // Smoothness factor (lower = smoother/slower, higher = snappier)
+                // 0.05 is very smooth "cinematic" feel
+                const ease = 0.05;
+
+                if (Math.abs(dist) > 1) {
+                    containerRef.current.scrollTop = current + dist * ease;
+                    requestAnimationFrame(animateScroll);
+                } else {
+                    isScrolling.current = false;
+                }
+            };
+            requestAnimationFrame(animateScroll);
         }
     }, [currentIndex]);
 
@@ -67,17 +99,21 @@ export const ParagraphHighlighter: React.FC<ParagraphHighlighterProps> = ({ text
             const isWord = /\S/.test(segment);
 
             if (!isWord) {
-                return <span key={i}>{segment}</span>;
+                return (
+                    <span
+                        key={i}
+                        className="text-white/90"
+                    >
+                        {segment}
+                    </span>
+                );
             }
 
             return (
                 <span
                     key={i}
                     ref={isCurrent ? activeWordRef : null}
-                    className={cn(
-                        "transition-colors duration-200 rounded-sm px-0.5 mx-[-2px]",
-                        isCurrent ? "bg-white/20 text-white font-semibold shadow-[0_0_10px_rgba(255,255,255,0.2)]" : "text-zinc-400"
-                    )}
+                    className="text-white/90 inline-block px-0.5"
                 >
                     {segment}
                 </span>
@@ -88,9 +124,11 @@ export const ParagraphHighlighter: React.FC<ParagraphHighlighterProps> = ({ text
     return (
         <div
             ref={containerRef}
-            className="w-full h-full overflow-y-auto custom-scrollbar p-4 text-[16px] leading-relaxed font-serif text-justify whitespace-pre-wrap"
+            className="w-full h-full overflow-y-auto overflow-x-hidden custom-scrollbar box-border p-6 text-[22px] leading-[1.8] font-medium font-sans tracking-wide text-center whitespace-pre-wrap select-none drop-shadow-md relative"
         >
-            {renderText()}
+            <div className="py-24">
+                {renderText()}
+            </div>
         </div>
     );
 };

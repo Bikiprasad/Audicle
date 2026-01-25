@@ -101,8 +101,14 @@ function Overlay() {
     useEffect(() => {
         if (audio.wordBoundary) {
             setCurrentIndex(audio.wordBoundary.charIndex);
+        } else if (readerMode === 'audio' && audio.isPlaying) {
+            // Fallback for providers without word boundaries (e.g. Kokoro Stream)
+            // Estimate position: ~15 chars/sec * speed
+            const charsPerSec = 15 * playbackSpeed;
+            const estimatedIndex = Math.floor(audio.currentTime * charsPerSec);
+            setCurrentIndex(Math.min(estimatedIndex, text.length));
         }
-    }, [audio.wordBoundary]);
+    }, [audio.wordBoundary, audio.currentTime, audio.isPlaying, readerMode, playbackSpeed, text.length]);
 
     // --- Audio Error Sync ---
     useEffect(() => {
@@ -133,13 +139,19 @@ function Overlay() {
         setGenerationProgress(0, 100)
 
         // Parsing
-        const { text: parsedText, url: parsedUrl } = parseCurrentPage()
-        setText(parsedText)
-        setSourceUrl(parsedUrl)
+        // Only re-parse if text is empty (e.g. fresh start) to avoid overwriting specific extraction or user edits
+        if (!text || text.trim().length === 0) {
+            const { text: parsedText, url: parsedUrl } = parseCurrentPage()
+            setText(parsedText)
+            setSourceUrl(parsedUrl)
+            console.log("Audicle: Parsed Content", { textLen: parsedText.length, url: parsedUrl })
+        } else {
+            console.log("Audicle: Using existing text", { textLen: text.length })
+        }
 
-        console.log("Audicle: Parsed Content", { textLen: parsedText.length, url: parsedUrl })
+        const currentText = text && text.trim().length > 0 ? text : (parseCurrentPage().text || "");
 
-        if (!parsedText || parsedText.length < 5) {
+        if (!currentText || currentText.length < 5) {
             // Error handling
             // We might want to set error state
             setUiState("idle")
@@ -151,10 +163,10 @@ function Overlay() {
         // SPEED READER MODE
         if (readerMode === 'speed-reader') {
             try {
-                speedReaderEngine.setText(parsedText)
+                speedReaderEngine.setText(currentText)
                 speedReaderEngine.setWpm(speedReaderWpm)
                 speedReaderEngine.setOnWordChange((wordIndex, word) => {
-                    const words = text.split(/\s+/)
+                    const words = currentText.split(/\s+/)
                     let charIndex = 0
                     for (let i = 0; i < wordIndex && i < words.length; i++) {
                         charIndex += words[i].length + 1
@@ -179,7 +191,7 @@ function Overlay() {
         // AUDIO MODE
         try {
             console.log("Overlay: Playing", {
-                textLength: text.length,
+                textLength: currentText.length,
                 voiceId,
                 playbackSpeed,
                 activeProvider: audio.isBuffering ? "buffering" : "ready"

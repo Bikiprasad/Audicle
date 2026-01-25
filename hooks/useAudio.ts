@@ -18,7 +18,11 @@ export const useAudio = () => {
         setDuration(audioService.getDuration());
         setCurrentTime(audioService.getCurrentTime());
         setPlaybackRate(audioService.getPlaybackRate());
-        // We can't easily sync "isPlaying" without a getter, but events cover it.
+
+        // Sync isPlaying state
+        // We added a helper to AudioService or we can deduce/assume.
+        // Best approach: AudioService.isPlaying()
+        setIsPlaying(audioService.isPlaying());
     }, []);
 
     // Event Subscriptions

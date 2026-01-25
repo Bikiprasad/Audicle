@@ -1,19 +1,26 @@
 
-import type { AudioProvider, Voice, WordBoundaryEvent } from "./types";
+import type { AudioProvider, Voice } from "./types";
 
 export class KokoroProvider implements AudioProvider {
     private baseUrl: string;
     private listeners: Map<string, Set<(data?: any) => void>> = new Map();
     private audioContext: AudioContext | null = null;
-    private sourceNode: AudioBufferSourceNode | null = null;
-    private isPlaying: boolean = false;
-    private startTime: number = 0;
-    private pauseTime: number = 0;
-    private accumulatedTime: number = 0;
-    private duration: number = 0;
-    private playbackRate: number = 1.0;
+    private audioElement: HTMLAudioElement | null = null;
+    private mediaSource: MediaSource | null = null;
+    private sourceBuffer: SourceBuffer | null = null;
+    private gainNode: GainNode | null = null;
+    private sourceNode: MediaElementAudioSourceNode | null = null;
+
+    public isPlaying: boolean = false;
     private currentText: string = "";
     private currentVoiceId: string = "";
+    private playbackRate: number = 1.0;
+    private currentVolume: number = 1.0;
+
+    // Queue for source buffer appending
+    private bufferQueue: Uint8Array[] = [];
+    private isAppending: boolean = false;
+    private isStreamComplete: boolean = false;
 
     constructor(baseUrl: string) {
         this.baseUrl = baseUrl.replace(/\/+$/, ""); // Remove trailing slash
@@ -37,12 +44,6 @@ export class KokoroProvider implements AudioProvider {
 
     async getVoices(): Promise<Voice[]> {
         try {
-            // Attempt to fetch voices from API if available
-            // Assuming strict remsky/Kokoro-FastAPI might not have a /voices endpoint documented,
-            // but we'll try a common convention or fallback to defaults.
-            // For now, I'll provide standard Kokoro voices as hardcoded fallbacks
-            // because `remsky/Kokoro-FastAPI` often just exposes the model.
-
             const defaults: Voice[] = [
                 { id: "af_bella", name: "Bella (American Female)", provider: "kokoro" },
                 { id: "af_sarah", name: "Sarah (American Female)", provider: "kokoro" },
@@ -53,7 +54,6 @@ export class KokoroProvider implements AudioProvider {
                 { id: "bm_lewis", name: "Lewis (British Male)", provider: "kokoro" },
                 { id: "bm_george", name: "George (British Male)", provider: "kokoro" },
             ];
-
             return defaults;
         } catch (e) {
             console.warn("Kokoro: Failed to fetch voices, using defaults", e);
@@ -63,37 +63,38 @@ export class KokoroProvider implements AudioProvider {
 
     private playSessionId: number = 0;
 
+
     async play(text: string, voiceId: string, speed: number): Promise<void> {
         this.stop();
         this.playSessionId++;
         const currentSessionId = this.playSessionId;
+        const startTime = performance.now();
+        console.log(`[Kokoro] Play Request Started at ${startTime.toFixed(2)}ms`);
 
         this.currentText = text;
         this.currentVoiceId = voiceId;
-        // For Kokoro Native Speed: We set local playback rate to 1.0 because the audio FILE itself is sped up.
         this.playbackRate = 1.0;
+
+        // precise estimate: ~150 words per minute => 0.4 seconds per word
+        const wordCount = text.trim().split(/\s+/).length;
+        this.estimatedDuration = Math.max(1, wordCount * 0.4);
 
         this.emit("waiting");
 
         try {
-            if (!this.audioContext) {
-                this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-            }
+            this.initializeAudioSystem();
 
-            // Resume context if suspended (browser autoplay policy)
-            if (this.audioContext.state === "suspended") {
-                await this.audioContext.resume();
-            }
+            if (!this.audioElement || !this.mediaSource) return;
 
             const payload = {
                 input: text,
                 voice: voiceId,
                 model: "kokoro",
-                speed: speed // Send speed to server
+                response_format: "mp3", // Request MP3 for MSE support
+                speed: speed
             };
             console.log("Kokoro Request Payload:", payload);
 
-            // Prepare Request
             const response = await fetch(`${this.baseUrl}/v1/audio/speech`, {
                 method: "POST",
                 headers: {
@@ -102,6 +103,9 @@ export class KokoroProvider implements AudioProvider {
                 body: JSON.stringify(payload)
             });
 
+            const ttfb = performance.now() - startTime;
+            console.log(`[Kokoro] TTFB (Headers): ${ttfb.toFixed(2)}ms`);
+
             if (currentSessionId !== this.playSessionId) {
                 console.log("Kokoro: Play request cancelled");
                 return;
@@ -109,175 +113,274 @@ export class KokoroProvider implements AudioProvider {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error("Kokoro API Error Details:", errorText);
                 throw new Error(`Kokoro API Error: ${response.status} ${response.statusText} - ${errorText}`);
             }
 
-            const arrayBuffer = await response.arrayBuffer();
+            if (!response.body) {
+                throw new Error("Kokoro API: No response body");
+            }
+
+            // Set up SourceBuffer
+            // We need to wait for sourceopen if it's not ready, but initializeAudioSystem should convert it to 'open' state via setting src
+            if (this.mediaSource.readyState !== 'open') {
+                await new Promise<void>((resolve) => {
+                    if (!this.mediaSource) return resolve();
+                    this.mediaSource.addEventListener('sourceopen', () => resolve(), { once: true });
+                });
+            }
 
             if (currentSessionId !== this.playSessionId) return;
 
-            const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+            try {
+                // Determine mime type. Safest for MP3 is audio/mpeg. 
+                // Some browsers might need 'audio/mp3'.
+                if (!this.sourceBuffer) {
+                    // Check support
+                    const mime = 'audio/mpeg';
+                    if (MediaSource.isTypeSupported(mime)) {
+                        this.sourceBuffer = this.mediaSource.addSourceBuffer(mime);
+                    } else {
+                        // Fallback: This browser might not support MP3 in MSE (rare for mp3, more common for AAC).
+                        // In that case we might need to fallback to full blob download.
+                        throw new Error(`MSE Mime type ${mime} not supported`);
+                    }
+                }
+            } catch (e) {
+                console.warn("MSE initialization failed, falling back to full download method", e);
+                // Fallback to legacy arraybuffer method could be implemented here OR just fail. 
+                // For now let's assume MP3 MSE support (Chrome/FF/Edge/Safari support it well).
+                throw e;
+            }
 
-            if (currentSessionId !== this.playSessionId) return;
+            this.sourceBuffer.mode = 'sequence';
+            this.sourceBuffer.addEventListener('updateend', () => {
+                this.isAppending = false;
+                this.processQueue();
+            });
 
-            this.currentBuffer = audioBuffer;
-            this.duration = audioBuffer.duration;
-            this.playBuffer(audioBuffer);
+            this.isPlaying = true;
+            this.isStreamComplete = false;
+            this.emit("play"); // Emit play early as we start streaming
 
-            this.emit("play");
+            // Start reading the stream
+            const reader = response.body.getReader();
+
+            let firstChunkReceived = false;
+
+            this.audioElement.addEventListener('playing', () => {
+                const playbackLatency = performance.now() - startTime;
+                console.log(`[Kokoro] Audio Playback Started: ${playbackLatency.toFixed(2)}ms`);
+            }, { once: true });
+
+            this.audioElement.play().catch(e => console.error("Audio play failed (autoplay?)", e));
+
+            while (true) {
+                const { done, value } = await reader.read();
+
+                if (currentSessionId !== this.playSessionId) {
+                    reader.cancel();
+                    return;
+                }
+
+                if (done) {
+                    this.isStreamComplete = true;
+                    this.processQueue(); // Trigger final check
+                    break;
+                }
+
+                if (value) {
+                    if (!firstChunkReceived) {
+                        firstChunkReceived = true;
+                        const firstChunkTime = performance.now() - startTime;
+                        console.log(`[Kokoro] First Chunk Received: ${firstChunkTime.toFixed(2)}ms`);
+                    }
+                    this.bufferQueue.push(value);
+                    this.processQueue();
+                }
+            }
 
         } catch (e) {
             if (currentSessionId === this.playSessionId) {
                 console.error("Kokoro Play Error", e);
                 this.emit("error", e);
+                this.stop();
             }
         }
     }
 
-    private gainNode: GainNode | null = null;
-
-    private playBuffer(buffer: AudioBuffer, offset: number = 0) {
-        if (!this.audioContext) return;
-
-        this.sourceNode = this.audioContext.createBufferSource();
-        this.sourceNode.buffer = buffer;
-        this.sourceNode.playbackRate.value = this.playbackRate;
-
-        if (!this.gainNode) {
-            this.gainNode = this.audioContext.createGain();
-            this.gainNode.connect(this.audioContext.destination);
+    private processQueue() {
+        if (!this.sourceBuffer || this.isAppending || this.bufferQueue.length === 0) {
+            if (this.isStreamComplete && !this.isAppending && this.bufferQueue.length === 0 && this.mediaSource?.readyState === 'open') {
+                try {
+                    this.mediaSource.endOfStream();
+                } catch (e) { console.warn("Error ending stream", e); }
+            }
+            return;
         }
 
-        this.sourceNode.connect(this.gainNode);
+        this.isAppending = true;
+        const chunk = this.bufferQueue.shift();
 
-        this.sourceNode.onended = () => {
-            // Only emit ended if we actually finished and weren't just stopped/paused manually
-            if (this.isPlaying && (this.getCurrentTime() >= this.duration - 0.5)) {
+
+        if (chunk) {
+            try {
+                this.sourceBuffer.appendBuffer(chunk as BufferSource);
+            } catch (e) {
+                console.error("SourceBuffer append error", e);
+                // If quota exceeded, we might need to remove old buffer, but for TTS short clips this is rare.
+                this.isAppending = false;
+            }
+        } else {
+            this.isAppending = false;
+        }
+    }
+
+    private initializeAudioSystem() {
+        if (!this.audioContext) {
+            this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+
+        if (this.audioContext.state === "suspended") {
+            this.audioContext.resume();
+        }
+
+        if (this.audioElement) {
+            // Clean up old element/media source if needed?
+            // Actually reusing the element is better but we need a new MediaSource for a new stream typically.
+            // Or we can just set src to '' and reset.
+            this.cleanupAudioElement();
+        }
+
+        this.audioElement = new Audio();
+        this.audioElement.crossOrigin = "anonymous";
+        this.mediaSource = new MediaSource();
+        this.audioElement.src = URL.createObjectURL(this.mediaSource);
+
+        // Connect to AudioContext
+        this.sourceNode = this.audioContext.createMediaElementSource(this.audioElement);
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.gain.value = this.currentVolume;
+        this.sourceNode.connect(this.gainNode);
+        this.gainNode.connect(this.audioContext.destination);
+
+        // Events
+        this.audioElement.onended = () => {
+            if (this.isPlaying) {
                 this.emit("ended");
                 this.isPlaying = false;
             }
         };
 
-        const startTime = this.audioContext.currentTime;
-        this.sourceNode.start(0, offset);
-
-        // Correct start time calculation to account for offset
-        this.startTime = startTime - (offset / this.playbackRate);
-        this.isPlaying = true;
-
-        // Start time update loop
-        this.startMonitor();
-    }
-
-    private monitorInterval: NodeJS.Timeout | null = null;
-
-    private startMonitor() {
-        if (this.monitorInterval) clearInterval(this.monitorInterval);
-        this.monitorInterval = setInterval(() => {
+        this.audioElement.ontimeupdate = () => {
             if (this.isPlaying) {
                 this.emit("timeupdate");
-
-                // Simulate word boundaries? 
-                // Kokoro API doesn't seem to return timestamps/alignment yet in standard OpenAI format.
-                // We could estimate based on WPM if needed, but for now simple time updates.
             }
-        }, 100);
+        };
+
+        this.audioElement.playbackRate = this.playbackRate;
+    }
+
+    private cleanupAudioElement() {
+        if (this.audioElement) {
+            this.audioElement.pause();
+            this.audioElement.removeAttribute('src');
+            this.audioElement.load();
+            this.audioElement = null;
+        }
+        if (this.sourceNode) {
+            this.sourceNode.disconnect();
+            this.sourceNode = null;
+        }
+        if (this.gainNode) {
+            this.gainNode.disconnect();
+            this.gainNode = null;
+        }
+        if (this.mediaSource) {
+            // mediaSource GC'd by unsetting src usually
+            this.mediaSource = null;
+        }
+        this.sourceBuffer = null;
+        this.bufferQueue = [];
+        this.isAppending = false;
+        this.isStreamComplete = false;
     }
 
     pause(): void {
-        if (this.isPlaying && this.sourceNode) {
-            this.sourceNode.stop();
-            this.sourceNode = null;
-            this.pauseTime = this.getCurrentTime();
+        if (this.audioElement && this.isPlaying) {
+            this.audioElement.pause();
             this.isPlaying = false;
             this.emit("pause");
         }
     }
 
     resume(): void {
-        if (!this.isPlaying && this.pauseTime >= 0 && this.currentBuffer) {
-            this.playBuffer(this.currentBuffer, this.pauseTime);
-            this.pauseTime = 0;
+        if (this.audioElement && !this.isPlaying) {
+            this.audioElement.play();
+            this.isPlaying = true;
             this.emit("play");
         }
     }
 
-    // Quick fix for Resume: Store buffer
-    private currentBuffer: AudioBuffer | null = null;
-
     stop(): void {
-        if (this.sourceNode) {
-            this.sourceNode.stop();
-            this.sourceNode = null;
-        }
-        if (this.monitorInterval) {
-            clearInterval(this.monitorInterval);
-            this.monitorInterval = null;
-        }
+        this.playSessionId++; // Invalidate current session
+        this.cleanupAudioElement();
         this.isPlaying = false;
-        this.accumulatedTime = 0;
-        this.pauseTime = 0;
-        this.pauseTime = 0;
-        // this.currentBuffer = null; // Don't clear buffer on stop to allow restart
+        // this.emit("stop"); // Optional?
     }
 
     seek(time: number): void {
-        if (!this.currentBuffer) return;
-
-        if (this.isPlaying) {
-            this.sourceNode?.stop();
-            this.playBuffer(this.currentBuffer, time);
-            this.emit("timeupdate");
-        } else {
-            this.pauseTime = Math.min(time, this.duration);
+        if (this.audioElement) {
+            // Clamp to buffered ranges if possible, or just try seeking
+            // MSE seeking outside buffered range might stall, but browser handles it usually.
+            // We'll just clamp to be safe against UI sending weird values.
+            const safeTime = Math.max(0, Math.min(time, this.getDuration()));
+            this.audioElement.currentTime = safeTime;
             this.emit("timeupdate");
         }
     }
 
     setVolume(volume: number): void {
+        this.currentVolume = volume;
         if (this.gainNode) {
             this.gainNode.gain.value = volume;
         }
     }
 
     setSpeed(speed: number): void {
-        // Native Speed Change (Requires Re-generation)
-        if (this.currentText && this.currentVoiceId) {
-            const currentTime = this.getCurrentTime();
-            const progress = this.duration > 0 ? currentTime / this.duration : 0;
-            const wasPlaying = this.isPlaying;
-
-            // Re-play with new speed
-            this.play(this.currentText, this.currentVoiceId, speed).then(() => {
-                const newTime = progress * this.duration;
-                this.seek(newTime);
-                if (!wasPlaying) {
-                    this.pause(); // Convert back to pause state if we were paused, but after seek updates
-                }
-            });
+        // Here 'speed' usually refers to playbackRate for the audio element
+        this.playbackRate = speed;
+        if (this.audioElement) {
+            this.audioElement.playbackRate = speed;
         }
+        // Note: The original 'speed' param in play() was sent to backend for generation speed.
+        // If the user wants to change generation speed mid-playback, that requires re-generation (expensive).
+        // Usually UI speed sliders control playbackRate.
     }
 
     getCurrentTime(): number {
-        if (!this.audioContext) return 0;
-        if (this.pauseTime > 0 && !this.isPlaying) return this.pauseTime;
-        if (!this.isPlaying) return 0;
-
-        const elapsed = (this.audioContext.currentTime - this.startTime) * this.playbackRate;
-        return Math.min(elapsed, this.duration);
+        return this.audioElement ? this.audioElement.currentTime : 0;
     }
 
     getDuration(): number {
-        return this.duration;
+        if (!this.audioElement) return 0;
+        const duration = this.audioElement.duration;
+        // If duration is finite and non-zero (meaning browser knows it), return it.
+        // Otherwise return our word-count estimate to keep the UI usable.
+        if (Number.isFinite(duration) && duration > 0 && duration !== Infinity) {
+            return duration;
+        }
+        return this.estimatedDuration;
     }
+
+    private estimatedDuration: number = 0;
 
     async download(text: string, voiceId: string): Promise<void> {
         try {
             const payload = {
                 input: text,
                 voice: voiceId,
-                model: "kokoro"
+                model: "kokoro",
+                response_format: "mp3"
             };
 
             console.log("Kokoro Download Payload:", payload);

@@ -22,17 +22,11 @@ export const useReadingList = () => {
     useEffect(() => {
         chrome.storage.local.get("audicle-library-v1", (result) => {
             if (result["audicle-library-v1"]) {
-                // Deduplicate by ID to fix legacy corruption
                 const data = result["audicle-library-v1"] as SavedArticle[]
+                // Dedupe
                 const uniqueData = data.filter((item, index, self) =>
                     index === self.findIndex((t) => t.id === item.id)
                 )
-
-                // If duplicates were found, update storage
-                if (uniqueData.length !== data.length) {
-                    chrome.storage.local.set({ "audicle-library-v1": uniqueData })
-                }
-
                 setArticles(uniqueData)
             }
         })

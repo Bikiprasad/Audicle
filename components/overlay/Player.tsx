@@ -196,10 +196,6 @@ export const Player = ({
                                 <SpeedReaderDisplay text={text} currentIndex={currentIndex} />
                             ) : (
                                 <div className="absolute inset-0 flex flex-col">
-                                    {/* Overlay Gradient for readability */}
-                                    <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-black to-transparent z-10 pointer-events-none" />
-                                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black to-transparent z-10 pointer-events-none" />
-
                                     <ParagraphHighlighter text={text} currentIndex={currentIndex} />
                                 </div>
                             )

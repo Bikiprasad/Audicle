@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 
 
 export type ReaderMode = 'audio' | 'speed-reader';
+export type Theme = 'light' | 'dark';
 
 export interface Settings {
     elevenLabsApiKey: string
@@ -14,6 +15,7 @@ export interface Settings {
     kokoroUrl?: string
     isKokoroEnabled?: boolean
     isPro?: boolean // Pro Tier Flag
+    theme?: Theme
 }
 
 // Settings that persist to storage (NO showOverlay)
@@ -25,7 +27,8 @@ const DEFAULT_SETTINGS: Settings = {
     speedReaderWpm: 400,
     kokoroUrl: "http://localhost:8880", // Default assumption
     isKokoroEnabled: false,
-    isPro: true // Default Enabled for Testing
+    isPro: true, // Default Enabled for Testing
+    theme: 'dark' // Default to dark for now
 }
 
 export const useSettings = () => {
@@ -99,6 +102,8 @@ export const useSettings = () => {
         setIsElevenLabsEnabled: (enabled: boolean) => updateSettings({ isElevenLabsEnabled: enabled }),
         setKokoroUrl: (url: string) => updateSettings({ kokoroUrl: url }),
         setIsKokoroEnabled: (enabled: boolean) => updateSettings({ isKokoroEnabled: enabled }),
-        isPro: settings.isPro ?? true
+        isPro: settings.isPro ?? true,
+        theme: settings.theme || 'dark',
+        setTheme: (theme: Theme) => updateSettings({ theme })
     }
 }

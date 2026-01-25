@@ -97,8 +97,55 @@ function parseTwitter(): PageContent {
     return { text, url }
 }
 
-function cleanText(text: string): string {
-    return text
-        .replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, '')
-        .trim()
+
+
+export function cleanText(text: string): string {
+    let clean = text;
+
+    // 1. Remove URLs (Skip)
+    // Matches http/https/www, and keeps removing non-whitespace chars until space or end
+    clean = clean.replace(/(https?:\/\/[^\s]+)|(www\.[^\s]+)/g, '');
+
+    // 2. Handle Math
+    // Strategy: 
+    // - Normalize common simple operators to text equivalents so they are read nicely.
+    // - Remove "Complex" blocks (e.g. LaTeX commands, heavy symbol density).
+
+    // 2a. Simple Math Replacements (english-speakable)
+    // = -> " equals "
+    // + -> " plus " (if surrounded by spaces or numbers)
+    clean = clean.replace(/(\s|^)=+(\s|$)/g, ' equals ');
+    clean = clean.replace(/(\s|^)\+(\s|$)/g, ' plus ');
+
+    // 2b. Common Physics/Math substitutions (User requested "E equals mc square")
+    // ^2 -> " squared"
+    // ^3 -> " cubed"
+    clean = clean.replace(/\^2(\s|$)/g, ' squared$1');
+    clean = clean.replace(/\^3(\s|$)/g, ' cubed$1');
+
+    // 2c. Complex Math Filter
+    // Filter out lines/blocks that are likely raw LaTeX or code-heavy math
+    // Heuristic: If a word contains "\" followed by non-alphanumeric, or known LaTeX keywords like \frac, \sum
+    const looksLikeLatex = /\\(frac|sum|int|sqrt|partial|alpha|beta|gamma|delta|pi|infty)/i;
+
+    // Split by lines to assess "density" of math? Or just simple global replace for now.
+    // Let's protect the user from "Slash frac slash..."
+    // If we find latex commands, we remove that specific token or the surrounding block?
+    // Let's remove specific complex tokens.
+
+    // Remove blocks enclosed in $...$ or $$...$$ (common LaTeX delimiters)
+    clean = clean.replace(/\$\$[^$]+\$\$/g, ''); // Double dollar
+    clean = clean.replace(/\$[^$]+\$/g, '');     // Single dollar (inline math)
+
+    // Remove standalone LaTeX commands
+    clean = clean.replace(/\\[a-zA-Z]+/g, '');
+
+    // 3. General Cleanup
+    // Remove Unicode noise / Emoji
+    clean = clean.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, '')
+
+    // Collapse multiple spaces
+    clean = clean.replace(/\s+/g, ' ').trim();
+
+    return clean;
 }

@@ -25,6 +25,7 @@ export interface AudioProvider {
     getVoices(): Promise<Voice[]>;
     getCurrentTime(): number;
     getDuration(): number;
+    isPlaying?: boolean | (() => boolean); // Optional for now
     download?(text: string, voiceId: string): Promise<void>;
 }
 
