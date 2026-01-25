@@ -41,3 +41,7 @@ coverage/
 *.pem
 .pnp
 .pnp.js
+
+# Workflows (Ignored)
+.agent/
+.github/
