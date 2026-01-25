@@ -1,4 +1,4 @@
-# Audicle 🎧
+# Audicle
 > **Turn the Web into Your Personal Podcast.**
 > *Local-First Neural Text-to-Speech for Articles & Tweets.*
 
@@ -10,7 +10,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.0-blue?logo=tailwindcss&style=for-the-badge)](https://tailwindcss.com/)
 [![Kokoro TTS](https://img.shields.io/badge/Neural%20TTS-Kokoro%2082M-orange?style=for-the-badge)](https://huggingface.co/hexgrad/Kokoro-82M)
 
-## 📖 Overview
+## Overview
 **Audicle** is a powerful Chrome Extension that transforms written content into high-fidelity audio. Unlike traditional screen readers, Audicle focuses on **listening experience** and **speed reading**.
 
 It bridges the gap between web content and neural audio by integrating:
@@ -18,15 +18,15 @@ It bridges the gap between web content and neural audio by integrating:
 2.  **Cloud Quality**: Optional integration with **ElevenLabs** for premium voices.
 3.  **RSVP Speed Reading**: Consume text at 3x speed with visual guides.
 
-## ✨ Key Features
-- **🏠 Local-First Architecture**: Your library lives on your device. Zero tracking, zero cloud dependency (unless you choose it).
-- **🧠 Neural Voice Engine**: Support for `Kokoro-82M` (via Localhost API) for near-human quality with <200ms latency.
-- **⚡ RSVP Speed Reader**: "Rapid Serial Visual Presentation" mode synchronizes audio with single-word visual updates to reduce eye strain.
-- **🐦 Twitter/X Integration**: Automatically scrapes metadata (Author, Avatar, Timestamp) when saving tweets.
-- **📊 Analytics Dashboard**: Track your listening habits, daily usage, and total words consumed.
-- **🎨 Beautiful UI**: Crafted with Tailwind CSS, framer-motion animations, and a responsive glassmorphic design.
+## Key Features
+- **Local-First Architecture**: Your library lives on your device. Zero tracking, zero cloud dependency (unless you choose it).
+- **Neural Voice Engine**: Support for `Kokoro-82M` (via Localhost API) for near-human quality with <200ms latency.
+- **RSVP Speed Reader**: "Rapid Serial Visual Presentation" mode synchronizes audio with single-word visual updates to reduce eye strain.
+- **Twitter/X Integration**: Automatically scrapes metadata (Author, Avatar, Timestamp) when saving tweets.
+- **Analytics Dashboard**: Track your listening habits, daily usage, and total words consumed.
+- **Beautiful UI**: Crafted with Tailwind CSS, framer-motion animations, and a responsive glassmorphic design.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - **Node.js** (v18+)
@@ -51,7 +51,7 @@ It bridges the gap between web content and neural audio by integrating:
     ```
     This will load the extension into Chrome. Open `chrome://extensions`, enable **Developer Mode**, and click **Load Unpacked** pointing to the `build/chrome-mv3-dev` folder.
 
-## 🛠️ Setup: Voice Engines
+## Setup: Voice Engines
 
 ### Option A: Local Inference (Recommended)
 Get free, unlimited, high-quality TTS by running the model locally.
@@ -76,7 +76,7 @@ Get free, unlimited, high-quality TTS by running the model locally.
 2.  Go to **Settings** -> **ElevenLabs**.
 3.  Paste your API Key.
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 graph TD
@@ -104,7 +104,7 @@ graph TD
     Kokoro -->|Runs| Model
 ```
 
-## 💻 Development
+## Development
 This project uses **Plasmo**, a framework for browser extensions.
 
 - `popup.tsx`: The extension popup (Quick Player).
@@ -112,10 +112,10 @@ This project uses **Plasmo**, a framework for browser extensions.
 - `background.ts`: Service worker handling audio streaming and downloads.
 - `contents/`: Scripts for parsing article text.
 
-## 📜 License
+## License
 MIT License. Open Source software.
 
-## 🙏 Credits
+## Credits
 - **Engineering**: Bikiprasad
 - **Model**: [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)
 - **Framework**: [Plasmo](https://docs.plasmo.com)
