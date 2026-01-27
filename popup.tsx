@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { useSettings } from "~hooks/useSettings"
 
 import { Power, Coffee, BookOpen, Volume2, Settings, Zap, Globe, Server, Sun, Moon } from "lucide-react"
+import { AudicleIcon } from "~lib/icons"
 import { cn } from "~lib/utils"
 import "./style.css"
 
@@ -123,8 +124,8 @@ function IndexPopup() {
           <div className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity dark:hidden" />
 
           <div className="flex items-center gap-4 relative z-10">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform duration-300">
-              <span className="text-white font-bold text-xs">A</span>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform duration-300 text-white">
+              <AudicleIcon size={26} />
             </div>
             <div className="flex flex-col items-start gap-0.5">
               <span className="text-xs font-bold text-zinc-800 dark:text-white uppercase tracking-wider group-hover:text-indigo-600 dark:group-hover:text-indigo-300 transition-colors">Open Dashboard</span>

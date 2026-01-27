@@ -33,3 +33,76 @@ export const SearchIcon = (props: any) => (
         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
     </svg>
 )
+
+// Audicle Brand Icon - "A" with soundwave
+export const AudicleIcon = ({ className, size = 24, ...props }: { className?: string; size?: number;[key: string]: any }) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox="0 0 100 100"
+        fill="none"
+        className={className}
+        {...props}
+    >
+        {/* Gradient Definition for Soundwave */}
+        <defs>
+            <linearGradient id="audicle-wave-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#60A5FA" />
+                <stop offset="50%" stopColor="#818CF8" />
+                <stop offset="100%" stopColor="#A78BFA" />
+            </linearGradient>
+        </defs>
+
+        {/* Letter "A" */}
+        <path
+            d="M50 12L22 88H34L40 72H60L66 88H78L50 12ZM44 60L50 40L56 60H44Z"
+            fill="currentColor"
+        />
+
+        {/* Soundwave passing through */}
+        <path
+            d="M8 55C18 55 22 42 32 42C42 42 46 68 56 68C66 68 70 48 80 48C88 48 92 55 92 55"
+            stroke="url(#audicle-wave-gradient)"
+            strokeWidth="5"
+            strokeLinecap="round"
+            fill="none"
+        />
+    </svg>
+)
+
+// Compact version for smaller contexts (just the wave hint)
+export const AudicleIconMini = ({ className, size = 24, ...props }: { className?: string; size?: number;[key: string]: any }) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox="0 0 100 100"
+        fill="none"
+        className={className}
+        {...props}
+    >
+        <defs>
+            <linearGradient id="audicle-wave-gradient-mini" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#60A5FA" />
+                <stop offset="50%" stopColor="#818CF8" />
+                <stop offset="100%" stopColor="#A78BFA" />
+            </linearGradient>
+        </defs>
+
+        {/* Letter "A" - bolder */}
+        <path
+            d="M50 8L18 92H36L42 74H58L64 92H82L50 8ZM46 58L50 42L54 58H46Z"
+            fill="currentColor"
+        />
+
+        {/* Soundwave */}
+        <path
+            d="M5 52C16 52 22 38 34 38C46 38 50 62 62 62C74 62 78 46 90 46C95 46 95 52 95 52"
+            stroke="url(#audicle-wave-gradient-mini)"
+            strokeWidth="6"
+            strokeLinecap="round"
+            fill="none"
+        />
+    </svg>
+)

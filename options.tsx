@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react"
 import { useSettings } from "~hooks/useSettings"
 import { useReadingList } from "~hooks/useReadingList"
 import { useAnalytics, AnalyticsService } from "~hooks/useAnalytics"
-import { HomeIcon, LayersIcon, PieChartIcon, SettingsIcon } from "~lib/icons"
+import { HomeIcon, LayersIcon, PieChartIcon, SettingsIcon, AudicleIcon } from "~lib/icons"
 import { cn } from "~lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 import { Cloud, Shield, Play, Trash2, ArrowUpRight, Github, Coffee, Zap, BookOpen, Mic, Sun, Moon, TerminalSquare } from "lucide-react"
@@ -50,8 +50,8 @@ function OptionsIndex() {
             >
                 {/* Brand */}
                 <div className="flex items-center gap-4 w-full">
-                    <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-gray-200 shrink-0 dark:shadow-none dark:bg-white dark:text-black">
-                        A
+                    <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg shadow-gray-200 shrink-0 dark:shadow-none dark:bg-white dark:text-black">
+                        <AudicleIcon size={28} />
                     </div>
                     <span className="font-bold text-xl text-slate-900 tracking-tight dark:text-white">
                         Audicle
@@ -84,12 +84,14 @@ function OptionsIndex() {
                         active={activeTab === 'library'}
                         onClick={() => setActiveTab('library')}
                     />
+                    {/* Analytics tab hidden - not working correctly
                     <SidebarItem
                         icon={<PieChartIcon />}
                         label="Analytics"
                         active={activeTab === 'analytics'}
                         onClick={() => setActiveTab('analytics')}
                     />
+                    */}
                     <SidebarItem
                         icon={<SettingsIcon />}
                         label="Settings"
@@ -113,7 +115,7 @@ function OptionsIndex() {
                             {activeTab === 'home' && 'Welcome to Audicle'}
                             {activeTab === 'voices' && 'Voice Studio'}
                             {activeTab === 'library' && 'Reading Library'}
-                            {activeTab === 'analytics' && 'Analytics Overview'}
+                            {/* {activeTab === 'analytics' && 'Analytics Overview'} */}
                             {activeTab === 'settings' && 'Configuration'}
                             {activeTab === 'setup' && 'Local Inference Setup'}
                         </h1>
@@ -166,7 +168,7 @@ function OptionsIndex() {
                                 <VoiceStudio />
                             </motion.div>
                         )}
-                        {activeTab === 'analytics' && <AnalyticsView />}
+                        {/* {activeTab === 'analytics' && <AnalyticsView />} */}
                         {activeTab === 'library' && <LibraryView />}
                         {activeTab === 'settings' && <SettingsView />}
                         {activeTab === 'setup' && <SetupView />}
@@ -332,7 +334,87 @@ const HomeView = ({ onNavigate }: { onNavigate: (tab: any) => void }) => {
                         <span>v0.1.0 Beta Now Live</span>
                     </div>
 
-                    <h2 className="text-6xl font-extrabold text-slate-900 tracking-tight leading-[1.1] dark:text-white">
+                    {/* Large Audicle Logo with Soundwave */}
+                    <div className="relative py-6">
+                        <svg viewBox="0 0 400 120" className="w-full max-w-xl mx-auto h-28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <linearGradient id="hero-wave-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stopColor="#60A5FA">
+                                        <animate attributeName="stop-color" values="#60A5FA;#818CF8;#A78BFA;#60A5FA" dur="4s" repeatCount="indefinite" />
+                                    </stop>
+                                    <stop offset="50%" stopColor="#818CF8">
+                                        <animate attributeName="stop-color" values="#818CF8;#A78BFA;#60A5FA;#818CF8" dur="4s" repeatCount="indefinite" />
+                                    </stop>
+                                    <stop offset="100%" stopColor="#A78BFA">
+                                        <animate attributeName="stop-color" values="#A78BFA;#60A5FA;#818CF8;#A78BFA" dur="4s" repeatCount="indefinite" />
+                                    </stop>
+                                </linearGradient>
+                                <linearGradient id="hero-wave-gradient-2" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stopColor="#818CF8">
+                                        <animate attributeName="stop-color" values="#818CF8;#A78BFA;#60A5FA;#818CF8" dur="5s" repeatCount="indefinite" />
+                                    </stop>
+                                    <stop offset="100%" stopColor="#60A5FA">
+                                        <animate attributeName="stop-color" values="#60A5FA;#818CF8;#A78BFA;#60A5FA" dur="5s" repeatCount="indefinite" />
+                                    </stop>
+                                </linearGradient>
+                            </defs>
+                            {/* Audicle Text */}
+                            <text x="200" y="75" textAnchor="middle" className="fill-slate-900 dark:fill-white" style={{ fontSize: '72px', fontWeight: 800, fontFamily: 'system-ui, sans-serif', letterSpacing: '-0.02em' }}>
+                                Audicle
+                            </text>
+
+                            {/* Background wave - faded, lighter - peaks at ~80, 180, 280 */}
+                            <path
+                                d="M0 60 C30 60, 55 30, 80 30 C105 30, 130 85, 180 85 C230 85, 255 40, 280 40 C305 40, 350 60, 400 60"
+                                stroke="url(#hero-wave-gradient-2)"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                fill="none"
+                                opacity="0.25"
+                            >
+                                <animate attributeName="d"
+                                    values="M0 60 C30 60, 55 30, 80 30 C105 30, 130 85, 180 85 C230 85, 255 40, 280 40 C305 40, 350 60, 400 60;
+                                            M0 55 C30 55, 55 25, 80 25 C105 25, 130 80, 180 80 C230 80, 255 35, 280 35 C305 35, 350 55, 400 55;
+                                            M0 60 C30 60, 55 30, 80 30 C105 30, 130 85, 180 85 C230 85, 255 40, 280 40 C305 40, 350 60, 400 60"
+                                    dur="3.5s" repeatCount="indefinite" />
+                            </path>
+
+                            {/* Secondary wave - semi-faded - peaks at ~140, 260, 360 (offset from others) */}
+                            <path
+                                d="M-20 55 C20 55, 90 85, 140 85 C190 85, 210 35, 260 35 C310 35, 330 75, 360 75 C390 75, 410 55, 420 55"
+                                stroke="url(#hero-wave-gradient)"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                fill="none"
+                                opacity="0.35"
+                            >
+                                <animate attributeName="d"
+                                    values="M-20 55 C20 55, 90 85, 140 85 C190 85, 210 35, 260 35 C310 35, 330 75, 360 75 C390 75, 410 55, 420 55;
+                                            M-20 60 C20 60, 90 90, 140 90 C190 90, 210 40, 260 40 C310 40, 330 80, 360 80 C390 80, 410 60, 420 60;
+                                            M-20 55 C20 55, 90 85, 140 85 C190 85, 210 35, 260 35 C310 35, 330 75, 360 75 C390 75, 410 55, 420 55"
+                                    dur="4.5s" repeatCount="indefinite" />
+                            </path>
+
+                            {/* Main Animated Soundwave - peaks at ~50, 165, 320 */}
+                            <path
+                                d="M5 58 C25 58, 35 28, 50 28 C90 28, 120 88, 165 88 C210 88, 250 38, 320 38 C360 38, 385 58, 395 58"
+                                stroke="url(#hero-wave-gradient)"
+                                strokeWidth="4"
+                                strokeLinecap="round"
+                                fill="none"
+                                opacity="0.9"
+                            >
+                                <animate attributeName="d"
+                                    values="M5 58 C25 58, 35 28, 50 28 C90 28, 120 88, 165 88 C210 88, 250 38, 320 38 C360 38, 385 58, 395 58;
+                                            M5 53 C25 53, 35 23, 50 23 C90 23, 120 83, 165 83 C210 83, 250 33, 320 33 C360 33, 385 53, 395 53;
+                                            M5 63 C25 63, 35 33, 50 33 C90 33, 120 93, 165 93 C210 93, 250 43, 320 43 C360 43, 385 63, 395 63;
+                                            M5 58 C25 58, 35 28, 50 28 C90 28, 120 88, 165 88 C210 88, 250 38, 320 38 C360 38, 385 58, 395 58"
+                                    dur="3s" repeatCount="indefinite" />
+                            </path>
+                        </svg>
+                    </div>
+
+                    <h2 className="text-5xl font-extrabold text-slate-900 tracking-tight leading-[1.1] dark:text-white">
                         The Intelligent Way to <br />
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-zinc-400">Listen to the Web.</span>
                     </h2>
@@ -399,6 +481,47 @@ const HomeView = ({ onNavigate }: { onNavigate: (tab: any) => void }) => {
                 ))}
             </motion.div>
 
+            {/* Neural Voice Pipeline (Kokoro Deep Dive) */}
+            <div className="space-y-16">
+                <div className="text-center max-w-2xl mx-auto space-y-4">
+                    <div className="inline-flex items-center gap-2 text-orange-600 font-bold uppercase text-xs tracking-wider dark:text-orange-400">
+                        <Mic className="w-4 h-4" />
+                        <span>The Voice Engine</span>
+                    </div>
+                    <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white">Powered by Kokoro-82M</h3>
+                    <p className="text-gray-500 leading-relaxed dark:text-zinc-400">
+                        Audicle bridges the gap between web content and high-fidelity audio by integrating the <strong>Kokoro-82M</strong> model. It's an open-weight TTS model that rivals commercial APIs while running entirely on your local hardware.
+                    </p>
+                </div>
+
+                {/* Pipeline Visualization */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    {[
+                        { step: "01", title: "Text Normalization", icon: "Aa", color: "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-zinc-300", desc: "Raw text is cleaned, URLs stripped, and numbers converted to words." },
+                        { step: "02", title: "G2P Conversion", icon: "PH", color: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400", desc: "Text is converted to phonemes (Grapheme-to-Phoneme) for pronunciation accuracy." },
+                        { step: "03", title: "Neural Inference", icon: <Cloud size={20} />, color: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400", desc: "The ONNX model predicts audio spectrograms from phonemes in <200ms." },
+                        { step: "04", title: "Vocoder & Stream", icon: <Zap size={20} />, color: "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400", desc: "Spectrograms are decoded to PCM audio and streamed instantly to the browser." }
+                    ].map((item, i) => (
+                        <div key={i} className="relative group">
+                            <div className="bg-white rounded-[24px] p-8 border border-gray-100 h-full hover:shadow-xl hover:-translate-y-1 transition-all dark:bg-zinc-900/50 dark:border-white/5 dark:shadow-none">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-sm", item.color)}>
+                                        {item.icon}
+                                    </div>
+                                    <span className="text-[10px] font-bold text-gray-300 dark:text-zinc-600 tracking-widest">{item.step}</span>
+                                </div>
+                                <h4 className="font-bold text-slate-900 mb-3 text-lg dark:text-white">{item.title}</h4>
+                                <p className="text-sm text-gray-500 leading-relaxed dark:text-zinc-500">{item.desc}</p>
+                            </div>
+                            {/* Connector Line (Mobile hidden) */}
+                            {i < 3 && (
+                                <div className="hidden md:block absolute top-1/2 -right-3 w-6 h-px bg-gray-200 z-10 -translate-y-1/2 dark:bg-white/10" />
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
             {/* Feature Spotlight Rows */}
             <div className="space-y-12">
                 {/* RSVP Row */}
@@ -435,10 +558,10 @@ const HomeView = ({ onNavigate }: { onNavigate: (tab: any) => void }) => {
                             <RSVPReaderDemo />
                         </div>
                     </div>
-                </motion.div>
+                </motion.div >
 
                 {/* ElevenLabs Row */}
-                <motion.div
+                < motion.div
                     whileHover={{ scale: 1.01 }}
                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
                     className="bg-white rounded-[32px] p-8 md:p-12 border border-gray-200 shadow-sm relative overflow-hidden dark:bg-zinc-900/50 dark:border-white/5"
@@ -484,11 +607,11 @@ const HomeView = ({ onNavigate }: { onNavigate: (tab: any) => void }) => {
                             </div>
                         </div>
                     </div>
-                </motion.div>
-            </div>
+                </motion.div >
+            </div >
 
             {/* Engineering Deep Dive */}
-            <div className="bg-slate-50 rounded-[32px] p-10 border border-gray-200 dark:bg-white/5 dark:border-white/5">
+            < div className="bg-slate-50 rounded-[32px] p-10 border border-gray-200 dark:bg-white/5 dark:border-white/5" >
                 <div className="flex flex-col md:flex-row gap-12 items-center">
                     <div className="flex-1 space-y-6">
                         <div className="inline-flex items-center gap-2 text-slate-900 font-bold uppercase text-xs tracking-wider dark:text-white">
@@ -553,47 +676,6 @@ const HomeView = ({ onNavigate }: { onNavigate: (tab: any) => void }) => {
                 </div>
             </div>
 
-            {/* Neural Voice Pipeline (Kokoro Deep Dive) */}
-            <div className="space-y-16">
-                <div className="text-center max-w-2xl mx-auto space-y-4">
-                    <div className="inline-flex items-center gap-2 text-orange-600 font-bold uppercase text-xs tracking-wider dark:text-orange-400">
-                        <Mic className="w-4 h-4" />
-                        <span>The Voice Engine</span>
-                    </div>
-                    <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white">Powered by Kokoro-82M</h3>
-                    <p className="text-gray-500 leading-relaxed dark:text-zinc-400">
-                        Audicle bridges the gap between web content and high-fidelity audio by integrating the <strong>Kokoro-82M</strong> model. It's an open-weight TTS model that rivals commercial APIs while running entirely on your local hardware.
-                    </p>
-                </div>
-
-                {/* Pipeline Visualization */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    {[
-                        { step: "01", title: "Text Normalization", icon: "Aa", color: "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-zinc-300", desc: "Raw text is cleaned, URLs stripped, and numbers converted to words." },
-                        { step: "02", title: "G2P Conversion", icon: "PH", color: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400", desc: "Text is converted to phonemes (Grapheme-to-Phoneme) for pronunciation accuracy." },
-                        { step: "03", title: "Neural Inference", icon: <Cloud size={20} />, color: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400", desc: "The ONNX model predicts audio spectrograms from phonemes in <200ms." },
-                        { step: "04", title: "Vocoder & Stream", icon: <Zap size={20} />, color: "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400", desc: "Spectrograms are decoded to PCM audio and streamed instantly to the browser." }
-                    ].map((item, i) => (
-                        <div key={i} className="relative group">
-                            <div className="bg-white rounded-[24px] p-8 border border-gray-100 h-full hover:shadow-xl hover:-translate-y-1 transition-all dark:bg-zinc-900/50 dark:border-white/5 dark:shadow-none">
-                                <div className="flex justify-between items-start mb-6">
-                                    <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-sm", item.color)}>
-                                        {item.icon}
-                                    </div>
-                                    <span className="text-[10px] font-bold text-gray-300 dark:text-zinc-600 tracking-widest">{item.step}</span>
-                                </div>
-                                <h4 className="font-bold text-slate-900 mb-3 text-lg dark:text-white">{item.title}</h4>
-                                <p className="text-sm text-gray-500 leading-relaxed dark:text-zinc-500">{item.desc}</p>
-                            </div>
-                            {/* Connector Line (Mobile hidden) */}
-                            {i < 3 && (
-                                <div className="hidden md:block absolute top-1/2 -right-3 w-6 h-px bg-gray-200 z-10 -translate-y-1/2 dark:bg-white/10" />
-                            )}
-                        </div>
-                    ))}
-                </div>
-            </div>
-
             {/* Support / Buy Me Coffee */}
             <div className="pt-8">
                 <a
@@ -640,7 +722,7 @@ const VoiceStudio = () => {
     const { voiceId, setVoiceId } = useSettings()
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {KOKORO_VOICES.map((v) => {
                 const isSelected = voiceId === v.id;
                 return (
@@ -648,32 +730,29 @@ const VoiceStudio = () => {
                         key={v.id}
                         onClick={() => setVoiceId(v.id)}
                         className={cn(
-                            "group bg-white rounded-2xl p-6 border transition-all cursor-pointer relative overflow-hidden dark:bg-white/5 dark:border-white/5 dark:hover:bg-white/10",
+                            "group bg-white rounded-xl p-3 border transition-all cursor-pointer relative overflow-hidden dark:bg-white/5 dark:border-white/5 dark:hover:bg-white/10",
                             isSelected
-                                ? "border-slate-900 shadow-[0_4px_20px_rgba(0,0,0,0.1)] ring-1 ring-slate-900 dark:border-white dark:shadow-none dark:ring-white"
-                                : "border-gray-100 hover:border-gray-200 hover:shadow-lg hover:shadow-gray-100"
+                                ? "border-slate-900 shadow-[0_2px_10px_rgba(0,0,0,0.1)] ring-1 ring-slate-900 dark:border-white dark:shadow-none dark:ring-white"
+                                : "border-gray-100 hover:border-gray-200 hover:shadow-md"
                         )}
                     >
-                        <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-2.5 mb-1.5">
                             <div className={cn(
-                                "w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold transition-all",
+                                "w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold transition-all shrink-0",
                                 isSelected ? "bg-slate-900 text-white dark:bg-white dark:text-black" : "bg-gray-100 text-gray-500 group-hover:bg-gray-200 group-hover:text-slate-900 dark:bg-white/10 dark:text-zinc-400 dark:group-hover:text-white"
                             )}>
                                 {v.name[0]}
                             </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className={cn("text-sm font-bold truncate", isSelected ? "text-slate-900 dark:text-white" : "text-slate-700 dark:text-zinc-200")}>{v.name}</h3>
+                            </div>
                             {isSelected && (
-                                <div className="px-2 py-1 rounded bg-slate-100 text-[10px] font-bold text-slate-900 uppercase dark:bg-white/20 dark:text-white">
-                                    Active
+                                <div className="px-1.5 py-0.5 rounded bg-slate-900 text-[9px] font-bold text-white uppercase shrink-0 dark:bg-white dark:text-black">
+                                    ✓
                                 </div>
                             )}
                         </div>
-
-                        <h3 className={cn("text-lg font-bold mb-1", isSelected ? "text-slate-900 dark:text-white" : "text-slate-700 dark:text-zinc-200")}>{v.name}</h3>
-                        <p className="text-xs text-gray-500 mb-6 dark:text-zinc-500">{v.description}</p>
-
-                        <button className="w-full py-2.5 rounded-lg border border-gray-100 bg-gray-50 text-xs font-semibold text-gray-600 hover:bg-white hover:border-gray-200 transition-all flex items-center justify-center gap-2 dark:bg-white/5 dark:border-white/5 dark:text-zinc-400 dark:hover:bg-white/10">
-                            <Play size={14} fill="currentColor" className="opacity-50" /> Preview Voice
-                        </button>
+                        <p className="text-[11px] text-gray-500 dark:text-zinc-500 truncate pl-[42px]">{v.description}</p>
                     </div>
                 )
             })}

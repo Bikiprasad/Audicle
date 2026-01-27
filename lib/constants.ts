@@ -9,7 +9,7 @@ export const KOKORO_VOICES: Voice[] = [
     { name: 'Aoede', id: 'af_aoede', description: 'American Female, Expressive', provider: 'kokoro' },
     { name: 'Jessica', id: 'af_jessica', description: 'American Female, Warm', provider: 'kokoro' },
     { name: 'Emma', id: 'bf_emma', description: 'British Female, Proper', provider: 'kokoro' },
-    { name: 'Isabella', id: 'bf_isabella', description: 'British Female, Elegant', provider: 'kokoro' },
+    { name: 'Isabella', id: 'bf_v0isabella', description: 'British Female, Elegant', provider: 'kokoro' },
     { name: 'Alice', id: 'bf_alice', description: 'British Female, Calm', provider: 'kokoro' },
     { name: 'Lily', id: 'bf_lily', description: 'British Female, Youthful', provider: 'kokoro' },
 
