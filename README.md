@@ -2,7 +2,7 @@
 > **Turn the Web into Your Personal Podcast with Audicle.**
 > *Local-First Neural Text-to-Speech for Articles & Tweets.*
 
-![Audicle Banner](/assets/icon.png)
+![Audicle Banner](/assets/20260127_081245.jpg)
 
 [![Plasmo](https://img.shields.io/badge/Built%20With-Plasmo-blue?style=for-the-badge)](https://www.plasmo.com/)
 [![React](https://img.shields.io/badge/React-18-blue?logo=react&style=for-the-badge)](https://react.dev/)
