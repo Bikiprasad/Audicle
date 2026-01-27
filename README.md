@@ -23,7 +23,7 @@ It bridges the gap between web content and neural audio by integrating:
 - **Neural Voice Engine**: Support for `Kokoro-82M` (via Localhost API) for near-human quality with <200ms latency.
 - **RSVP Speed Reader**: "Rapid Serial Visual Presentation" mode synchronizes audio with single-word visual updates to reduce eye strain.
 - **Twitter/X Integration**: Automatically scrapes metadata (Author, Avatar, Timestamp) when saving tweets.
-- **Analytics Dashboard**: Track your listening habits, daily usage, and total words consumed.
+- **Analytics Dashboard**: Track your listening habits, daily usage, and total words consumed.[under development]
 - **Beautiful UI**: Crafted with Tailwind CSS, framer-motion animations, and a responsive glassmorphic design.
 
 ## Getting Started
