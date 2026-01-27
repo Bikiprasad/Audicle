@@ -112,8 +112,7 @@ This project uses **Plasmo**, a framework for browser extensions.
 - `background.ts`: Service worker handling audio streaming and downloads.
 - `contents/`: Scripts for parsing article text.
 
-## License
-MIT License. Open Source software.
+**Open Source software.**
 
 ## Credits
 - **Model**: [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)
