@@ -722,43 +722,63 @@ const VoiceStudio = () => {
     const { voiceId, setVoiceId } = useSettings()
 
     return (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {KOKORO_VOICES.map((v) => {
-                const isSelected = voiceId === v.id;
-                return (
-                    <div
-                        key={v.id}
-                        onClick={() => setVoiceId(v.id)}
-                        className={cn(
-                            "group bg-white rounded-xl p-3 border transition-all cursor-pointer relative overflow-hidden dark:bg-white/5 dark:border-white/5 dark:hover:bg-white/10",
-                            isSelected
-                                ? "border-slate-900 shadow-[0_2px_10px_rgba(0,0,0,0.1)] ring-1 ring-slate-900 dark:border-white dark:shadow-none dark:ring-white"
-                                : "border-gray-100 hover:border-gray-200 hover:shadow-md"
-                        )}
-                    >
-                        <div className="flex items-center gap-2.5 mb-1.5">
-                            <div className={cn(
-                                "w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold transition-all shrink-0",
-                                isSelected ? "bg-slate-900 text-white dark:bg-white dark:text-black" : "bg-gray-100 text-gray-500 group-hover:bg-gray-200 group-hover:text-slate-900 dark:bg-white/10 dark:text-zinc-400 dark:group-hover:text-white"
-                            )}>
-                                {v.name[0]}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <h3 className={cn("text-sm font-bold truncate", isSelected ? "text-slate-900 dark:text-white" : "text-slate-700 dark:text-zinc-200")}>{v.name}</h3>
-                            </div>
-                            {isSelected && (
-                                <div className="px-1.5 py-0.5 rounded bg-slate-900 text-[9px] font-bold text-white uppercase shrink-0 dark:bg-white dark:text-black">
-                                    ✓
-                                </div>
-                            )}
-                        </div>
-                        <p className="text-[11px] text-gray-500 dark:text-zinc-500 truncate pl-[42px]">{v.description}</p>
+        <div className="space-y-12">
+
+
+
+            {/* Voices Section */}
+            <div className="space-y-6">
+                <div className="flex items-center gap-3 pb-4 border-b border-gray-100 dark:border-white/5">
+                    <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600 dark:bg-orange-500/10 dark:text-orange-400">
+                        <Mic size={20} />
                     </div>
-                )
-            })}
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Voice Library</h2>
+                        <p className="text-sm text-gray-500 dark:text-zinc-500">Select a neural voice for playback.</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {KOKORO_VOICES.map((v) => {
+                        const isSelected = voiceId === v.id;
+                        return (
+                            <div
+                                key={v.id}
+                                onClick={() => setVoiceId(v.id)}
+                                className={cn(
+                                    "group bg-white rounded-xl p-3 border transition-all cursor-pointer relative overflow-hidden dark:bg-white/5 dark:border-white/5 dark:hover:bg-white/10",
+                                    isSelected
+                                        ? "border-slate-900 shadow-[0_2px_10px_rgba(0,0,0,0.1)] ring-1 ring-slate-900 dark:border-white dark:shadow-none dark:ring-white"
+                                        : "border-gray-100 hover:border-gray-200 hover:shadow-md"
+                                )}
+                            >
+                                <div className="flex items-center gap-2.5 mb-1.5">
+                                    <div className={cn(
+                                        "w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold transition-all shrink-0",
+                                        isSelected ? "bg-slate-900 text-white dark:bg-white dark:text-black" : "bg-gray-100 text-gray-500 group-hover:bg-gray-200 group-hover:text-slate-900 dark:bg-white/10 dark:text-zinc-400 dark:group-hover:text-white"
+                                    )}>
+                                        {v.name[0]}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className={cn("text-sm font-bold truncate", isSelected ? "text-slate-900 dark:text-white" : "text-slate-700 dark:text-zinc-200")}>{v.name}</h3>
+                                    </div>
+                                    {isSelected && (
+                                        <div className="px-1.5 py-0.5 rounded bg-slate-900 text-[9px] font-bold text-white uppercase shrink-0 dark:bg-white dark:text-black">
+                                            ✓
+                                        </div>
+                                    )}
+                                </div>
+                                <p className="text-[11px] text-gray-500 dark:text-zinc-500 truncate pl-[42px]">{v.description}</p>
+                            </div>
+                        )
+                    })}
+                </div>
+            </div>
         </div>
     )
 }
+
+
 
 const AnalyticsView = () => {
     const { data, getWords, getTokens, getGrowthTrend } = useAnalytics()

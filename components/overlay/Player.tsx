@@ -11,6 +11,7 @@ import { SpeedReaderDisplay } from "./SpeedReaderDisplay"
 import { ParagraphHighlighter } from "./ParagraphHighlighter"
 import { VideoExporter } from "~lib/video/VideoExporter"
 
+
 interface PlayerProps {
     uiState: "idle" | "generating" | "editing" | "ready"
     // Audio State
@@ -120,22 +121,42 @@ export const Player = ({
 
     const handleExportVideo = async () => {
         try {
-            setIsExporting(true)
-            setIsExportComplete(false)
-            setExportProgress(0)
-
             // Validate Voice
             const currentVoiceFn = voices.find(v => v.id === voiceId)
             if (!currentVoiceFn || currentVoiceFn.provider === 'web-speech') {
                 alert("Video export is only available for Kokoro and ElevenLabs voices.")
-                setIsExporting(false)
                 return
             }
+
+            // 1. Get File Handle IMMEDIATELY to preserve user gesture
+            // This requires the browser to support File System Access API (Chrome/Edge/Opera)
+            if (!('showSaveFilePicker' in window)) {
+                alert("Your browser does not support streaming video export. Please use Chrome or Edge.");
+                return;
+            }
+
+            let fileHandle;
+            try {
+                fileHandle = await (window as any).showSaveFilePicker({
+                    suggestedName: `audicle-export-${Date.now()}.mp4`,
+                    types: [{
+                        description: 'MP4 Video',
+                        accept: { 'video/mp4': ['.mp4'] },
+                    }],
+                });
+            } catch (err) {
+                // User cancelled
+                return;
+            }
+
+            setIsExporting(true)
+            setIsExportComplete(false)
+            setExportProgress(0)
 
             // Exporter
             const exporter = new VideoExporter()
 
-            // Fetch Blob
+            // Fetch Audio Blob URL
             let audioUrl = ""
             if (currentVoiceFn.provider === 'kokoro') {
                 const response = await fetch(`http://localhost:8880/v1/audio/speech`, {
@@ -157,22 +178,16 @@ export const Player = ({
                 return
             }
 
-            const videoBlob = await exporter.export(
+            await exporter.export(
                 audioUrl,
                 text, // Pass full text for Tweet UI
                 metadata?.handle || currentVoiceFn.name, // Use handle if available, else voice
                 metadata?.author || "Audicle", // User real name
                 metadata?.avatar, // User avatar URL
                 videoQuality, // '720p' | '1080p'
-                setExportProgress
+                setExportProgress,
+                fileHandle
             )
-
-            // Download
-            const url = URL.createObjectURL(videoBlob as Blob)
-            const a = document.createElement("a")
-            a.href = url
-            a.download = `audicle-export-${Date.now()}.mp4`
-            a.click()
 
             // Success State
             setIsExportComplete(true)
@@ -219,29 +234,43 @@ export const Player = ({
                 </div>
 
                 {/* Noise Texture Overlay */}
-                <div className="absolute inset-0 opacity-[0.05] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-repeat mix-blend-overlay" />
+                <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-repeat mix-blend-overlay" />
 
                 {/* OLED SCREEN */}
                 <div className="relative bg-black rounded-[20px] px-5 pt-5 pb-1 text-white min-h-[180px] flex flex-col shadow-[inset_0_2px_10px_rgba(0,0,0,1)] border border-white/5 overflow-hidden group">
 
+                    {/* 1. Subtle Pixel Grid */}
+                    <div className="absolute inset-0 pointer-events-none z-10 opacity-[0.03]"
+                        style={{
+                            backgroundImage: "linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px)",
+                            backgroundSize: "4px 4px"
+                        }}
+                    />
+
+                    {/* 2. Scanlines (Moving) */}
+                    <div className="absolute inset-0 pointer-events-none z-10 opacity-[0.05] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%]" />
+
+                    {/* 3. Vignette */}
+                    <div className="absolute inset-0 pointer-events-none z-20 bg-[radial-gradient(circle_at_center,transparent_50%,rgba(0,0,0,0.4)_100%)]" />
+
                     {/* Dynamic Background Image - Audio Mode Only */}
                     {readerMode === 'audio' && backgroundImage && (
-                        <div className="absolute inset-0 z-0">
+                        <div className="absolute inset-0 z-0 opacity-80">
                             <div
-                                className="absolute inset-0 bg-cover bg-center opacity-90 transition-opacity duration-1000"
+                                className="absolute inset-0 bg-cover bg-center opacity-70 transition-opacity duration-1000 grayscale-[0.3]"
                                 style={{ backgroundImage: `url(${backgroundImage})` }}
                             />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/30" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/40" />
                         </div>
                     )}
 
                     {/* Matte Glass Background - Speed Reader Mode */}
                     {readerMode === 'speed-reader' && (
-                        <div className="absolute inset-0 z-0 bg-gradient-to-b from-zinc-900/50 to-black/80" />
+                        <div className="absolute inset-0 z-0 bg-gradient-to-b from-zinc-900/90 to-black" />
                     )}
 
-                    {/* Screen Glare & Effect */}
-                    <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-bl from-white/5 to-transparent pointer-events-none rounded-[20px] z-20" />
+                    {/* Screen Glare & Effect (Improved) */}
+                    <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none rounded-[20px] z-30 opacity-50" />
 
                     {/* Main Display */}
                     <div className="flex-1 flex flex-col justify-center items-center text-center z-30 relative w-full overflow-hidden">
@@ -274,13 +303,7 @@ export const Player = ({
                                 </div>
                             </div>
                         ) : uiState === "ready" ? (
-                            readerMode === 'speed-reader' ? (
-                                <SpeedReaderDisplay text={text} currentIndex={currentIndex} />
-                            ) : (
-                                <div className="absolute inset-0 flex flex-col">
-                                    <ParagraphHighlighter text={text} currentIndex={currentIndex} />
-                                </div>
-                            )
+                            <SpeedReaderDisplay text={text} currentIndex={currentIndex} avatar={metadata?.avatar} />
                         ) : null}
                     </div>
 
@@ -569,11 +592,15 @@ export const Player = ({
                 {/* Secondary Row: Voice Selector */}
                 {/* Secondary Row: Voice Selector - Audio Mode Only */}
                 {readerMode === 'audio' && (
-                    <VoiceSelector
-                        voices={voices}
-                        currentVoiceId={voiceId}
-                        onVoiceSelect={onVoiceSelect}
-                    />
+                    <div className="flex flex-col gap-4">
+                        <VoiceSelector
+                            voices={voices}
+                            currentVoiceId={voiceId}
+                            onVoiceSelect={onVoiceSelect}
+                        />
+
+
+                    </div>
                 )}
 
                 {/* BOTTOM BRANDING */}

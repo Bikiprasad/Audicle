@@ -85,8 +85,9 @@ export class VideoExporter {
         authorName: string,
         avatarUrl: string | undefined,
         quality: '720p' | '1080p',
-        onProgress: (percent: number) => void
-    ): Promise<Blob> {
+        onProgress: (percent: number) => void,
+        fileHandle: FileSystemFileHandle
+    ): Promise<void> {
         console.log("[VideoExporter] Starting Export Process...", quality);
 
         // 1. Select Configuration
@@ -109,9 +110,11 @@ export class VideoExporter {
         let videoChunksCount = 0;
         let encoderError: Error | null = null;
 
-        // 3. Setup Muxer
+        // 3. Setup Muxer with FileSystem Target
+        const writable = await fileHandle.createWritable();
+
         const muxer = new Mp4Muxer.Muxer({
-            target: new Mp4Muxer.ArrayBufferTarget(),
+            target: new Mp4Muxer.FileSystemWritableFileStreamTarget(writable),
             video: {
                 codec: 'avc',
                 width: this.width,
@@ -122,7 +125,7 @@ export class VideoExporter {
                 sampleRate: audioBuffer.sampleRate,
                 numberOfChannels: audioBuffer.numberOfChannels
             },
-            fastStart: 'in-memory'
+            fastStart: false
         });
 
         // 4. Setup Video Encoder
@@ -176,14 +179,25 @@ export class VideoExporter {
         console.log(`[VideoExporter] Rendering ${totalFrames} frames...`);
 
         // Layout Calculations
+        // Layout Calculations
         const cardWidth = this.width * 0.8; // Match drawTweetFrame (Increased to 0.8)
         const fontSize = Math.floor(this.width * 0.024); // Match reduced font size
         // Wrap width: cardWidth - padding (100 is 50*2 padding) - extra safe margin (40)
         // Using -140 ensures text never touches the right edge
         const lines = this.wrapText(this.ctx, text, cardWidth - 140, fontSize);
 
+        // --- OPTIMIZATION: Render Static Background ONCE ---
+        console.log("[VideoExporter] Pre-rendering static background...");
+        const staticBackground = this.renderStaticBackground(lines, handle, authorName, avatarBitmap);
+        // ----------------------------------------------------
+
         for (let i = 0; i < totalFrames; i++) {
             if (encoderError) break;
+
+            // Flow Control: Prevent Backpressure
+            if (videoEncoder.encodeQueueSize > 10) {
+                await videoEncoder.flush();
+            }
 
             const timestamp = (i / fps) * 1_000_000;
             const startIdx = i * samplesPerFrame;
@@ -194,19 +208,15 @@ export class VideoExporter {
                     sum += amp * amp;
                 }
             }
-            const rms = Math.sqrt(sum / samplesPerFrame);
-            const amplitude = Math.min(1.0, rms * 5);
+            const rmsVal = Math.sqrt(sum / samplesPerFrame);
+            const audioAmplitude = Math.min(1.0, rmsVal * 5);
 
-            // DRAW FRAME
-            this.drawTweetFrame(
-                i / fps,
-                audioBuffer.duration,
-                lines,
-                handle,
-                authorName,
-                avatarBitmap,
-                amplitude
-            );
+            // DRAW FRAME (Optimized)
+            // 1. Draw Static Layer (Instant Bitmap Blit)
+            this.ctx.drawImage(staticBackground, 0, 0);
+
+            // 2. Draw Dynamic Layer (Waveform)
+            this.drawDynamicOverlay(i / fps, audioAmplitude);
 
             const bitmap = this.canvas.transferToImageBitmap();
             const videoFrame = new VideoFrame(bitmap, {
@@ -219,6 +229,8 @@ export class VideoExporter {
             videoFrame.close();
 
             if (i % 30 === 0) onProgress((i / totalFrames) * 100);
+
+            // Allow UI to breathe
             if (i % 15 === 0) await new Promise(r => setTimeout(r, 0));
         }
 
@@ -266,12 +278,12 @@ export class VideoExporter {
             if (currentSample % (framesPerChunk * 5) === 0) await new Promise(r => setTimeout(r, 0));
         }
 
-        await audioEncoder.flush();
-        muxer.finalize();
+        await writable.close();
+
+        // Cleanup Optimization
+        staticBackground.close();
 
         console.log("[VideoExporter] Export Complete!");
-        const buffer = muxer.target.buffer;
-        return new Blob([buffer], { type: 'video/mp4' });
     }
 
     private async loadAvatar(url: string): Promise<ImageBitmap | null> {
@@ -285,16 +297,16 @@ export class VideoExporter {
         }
     }
 
-    private drawTweetFrame(
-        currentTime: number,
-        totalDuration: number,
+    private renderStaticBackground(
         lines: string[],
         handle: string,
         authorName: string,
-        avatar: ImageBitmap | null,
-        energeticAmplitude: number
-    ) {
+        avatar: ImageBitmap | null
+    ): ImageBitmap {
         const { ctx, width, height } = this;
+
+        // Clear (sanity check, though we overwrite)
+        ctx.clearRect(0, 0, width, height);
 
         // 1. Background Gradient (Dark Teal/Emerald - Reference Style)
         const gradient = ctx.createLinearGradient(0, 0, width, height);
@@ -305,16 +317,10 @@ export class VideoExporter {
         ctx.fillRect(0, 0, width, height);
 
         // 2. Card Dimensions
-        // Wider card to fill space better
-        const cardWidth = width * 0.8; // Increased from 0.7 to 0.8 to use more space
-
-        // Font size REDUCED further (0.027 -> 0.024)
-        // const fontSize = Math.floor(width * 0.024); // Handled in text block now? 
-        // Actually best to keep it here if used for layout calculations.
+        const cardWidth = width * 0.8;
         const tweetFontSize = Math.floor(width * 0.024);
-        const lineHeight = Math.floor(tweetFontSize * 1.6); // Use new var name
+        const lineHeight = Math.floor(tweetFontSize * 1.6);
 
-        // Fixed Height Layout for stability
         const cardHeight = height * 0.6;
         const cardX = (width - cardWidth) / 2;
         const cardY = (height - cardHeight) / 2 - 20;
@@ -326,7 +332,6 @@ export class VideoExporter {
 
         // Card Body (Transparent/Glassy)
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'; // 60% Opacity
-        // Add a thin border for definition
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
         ctx.lineWidth = 1;
 
@@ -358,42 +363,36 @@ export class VideoExporter {
         }
         ctx.restore();
 
-
-
-        // Name & Handle
         // Name & Handle
         const headerTextX = headerX + avatarSize + 20;
 
-        // Name (Top aligned with extra padding)
+        // Name
         ctx.font = `bold ${Math.floor(width * 0.02)}px Inter, 'Segoe UI', system-ui, sans-serif`;
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillText(authorName, headerTextX, headerY + 5); // Moved up slightly (8->5) for better balance
+        ctx.fillText(authorName, headerTextX, headerY + 5);
 
-        // Handle (Below name)
+        // Handle
         ctx.font = `normal ${Math.floor(width * 0.016)}px Inter, sans-serif`;
         ctx.fillStyle = '#94a3b8'; // Slate 400
-        ctx.fillText(`${handle.startsWith('@') ? '' : '@'}${handle}`, headerTextX, headerY + 38); // Standardized spacing
+        ctx.fillText(`${handle.startsWith('@') ? '' : '@'}${handle}`, headerTextX, headerY + 38);
 
-        // X Logo (Top Right)
+        // X Logo
         ctx.font = `bold ${Math.floor(width * 0.02)}px sans-serif`;
         ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.fillText("𝕏", cardX + cardWidth - padding - 20, headerY + 10);
 
         // 4. Content Text
-        // Logic: Quotes + Truncate > 4 Lines (Strict)
-        // REDUCED FONT SIZE: 0.027 -> 0.024
-        ctx.font = `italic 400 ${tweetFontSize}px 'Georgia', serif`; // Serif for quotes aesthetic
+        ctx.font = `italic 400 ${tweetFontSize}px 'Georgia', serif`;
         ctx.fillStyle = '#f1f5f9'; // Slate 100
-        const textY = headerY + 110; // Increased top margin for text
+        const textY = headerY + 110;
 
-        const maxLines = 4; // DIRECT REQUEST: STRICTLY 4 LINES
+        const maxLines = 4;
         let displayLines = [...lines];
 
         if (displayLines.length > maxLines) {
             displayLines = displayLines.slice(0, maxLines);
-            // Append "..." to last line
             const lastLine = displayLines[maxLines - 1];
             displayLines[maxLines - 1] = lastLine.endsWith('...') ? lastLine : lastLine + "...";
         }
@@ -407,6 +406,40 @@ export class VideoExporter {
         displayLines.forEach((line, i) => {
             ctx.fillText(line, headerX, textY + (i * lineHeight));
         });
+
+        // 5. Footer Branding
+        const footerY = height - 45;
+        ctx.textAlign = 'center';
+
+        // "Listen on"
+        ctx.font = `300 ${Math.floor(width * 0.012)}px Inter, sans-serif`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        const prefix = "Listen on  ";
+        const prefixWidth = ctx.measureText(prefix).width;
+
+        // "Audicle"
+        ctx.font = `600 ${Math.floor(width * 0.013)}px Inter, sans-serif`;
+        const brand = "AUDICLE";
+        const brandWidth = ctx.measureText(brand).width;
+
+        const totalFooterWidth = prefixWidth + brandWidth;
+        const startX = (width - totalFooterWidth) / 2;
+
+        ctx.font = `300 ${Math.floor(width * 0.012)}px Inter, sans-serif`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.textAlign = 'left';
+        ctx.fillText(prefix, startX, footerY);
+
+        ctx.font = `700 ${Math.floor(width * 0.013)}px Inter, sans-serif`;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(brand, startX + prefixWidth, footerY);
+
+        // Capture Snapshot as ImageBitmap
+        return this.canvas.transferToImageBitmap();
+    }
+
+    private drawDynamicOverlay(currentTime: number, energeticAmplitude: number) {
+        const { ctx, width, height } = this;
 
         // 6. Waveform (Bottom - Outside Card)
         const waveY = height - 100;
@@ -432,42 +465,6 @@ export class VideoExporter {
             ctx.globalAlpha = 1.0;
             ctx.fill();
         }
-
-        // 7. Footer Branding (Premium)
-        const footerY = height - 45;
-        ctx.textAlign = 'center';
-
-        // "Listen on" (Thin, Opacity reduced)
-        ctx.font = `300 ${Math.floor(width * 0.012)}px Inter, sans-serif`;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-        const prefix = "Listen on  ";
-        const prefixWidth = ctx.measureText(prefix).width;
-
-        // "Audicle" (Bold, Bright)
-        ctx.font = `600 ${Math.floor(width * 0.013)}px Inter, sans-serif`; // Slightly larger
-        const brand = "AUDICLE";
-        const brandWidth = ctx.measureText(brand).width;
-
-        // Center the combined block
-        const totalFooterWidth = prefixWidth + brandWidth;
-        const startX = (width - totalFooterWidth) / 2;
-
-        // Draw Prefix
-        ctx.font = `300 ${Math.floor(width * 0.012)}px Inter, sans-serif`;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.textAlign = 'left';
-        ctx.fillText(prefix, startX, footerY);
-
-        // Draw Brand
-        ctx.font = `700 ${Math.floor(width * 0.013)}px Inter, sans-serif`;
-        ctx.fillStyle = '#ffffff';
-        // REMOVED SHADOW/GLOW TO FIX "WEIRD BLUR"
-        // ctx.shadowColor = "rgba(255, 255, 255, 0.4)";
-        // ctx.shadowBlur = 10;
-        ctx.fillText(brand, startX + prefixWidth, footerY);
-
-        // Reset Shadow
-        ctx.shadowColor = "transparent";
     }
 
     private wrapText(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: number, fontSize: number): string[] {

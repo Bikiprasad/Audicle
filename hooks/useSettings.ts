@@ -17,6 +17,7 @@ export interface Settings {
     isPro?: boolean // Pro Tier Flag
     videoQuality: '720p' | '1080p'
     theme?: Theme
+
 }
 
 // Settings that persist to storage (NO showOverlay)
@@ -30,7 +31,8 @@ const DEFAULT_SETTINGS: Settings = {
     isKokoroEnabled: false,
     isPro: true, // Default Enabled for Testing
     videoQuality: '720p',
-    theme: 'dark' // Default to dark for now
+    theme: 'dark', // Default to dark for now
+
 }
 
 export const useSettings = () => {

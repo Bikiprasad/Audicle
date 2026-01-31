@@ -1,68 +1,87 @@
-import React from "react";
+import React, { useEffect, useState, useMemo } from "react";
+import { cn } from "~lib/utils";
 
 interface SpeedReaderDisplayProps {
     text: string;
     currentIndex: number;
+    avatar?: string;
 }
 
-export const SpeedReaderDisplay: React.FC<SpeedReaderDisplayProps> = ({ text, currentIndex }) => {
-    // 1. Find the current word based on currentIndex
-    const safeIndex = Math.min(Math.max(0, currentIndex), text.length - 1);
-    // Simple boundary check: scan back/forward for space
-    const isSpace = (i: number) => /\s/.test(text[i] || " ");
+export const SpeedReaderDisplay: React.FC<SpeedReaderDisplayProps> = ({ text, currentIndex, avatar }) => {
+    // Speaking state logic (Visual feedback only)
+    const [isSpeaking, setIsSpeaking] = useState(false);
 
-    let start = safeIndex;
-    while (start > 0 && !isSpace(start - 1)) start--;
+    useEffect(() => {
+        if (currentIndex > 0) {
+            setIsSpeaking(true);
+            const timer = setTimeout(() => setIsSpeaking(false), 150);
+            return () => clearTimeout(timer);
+        }
+    }, [currentIndex]);
 
-    let end = safeIndex;
-    while (end < text.length && !isSpace(end)) end++;
+    // Calculate current word based on char index
+    const currentWord = useMemo(() => {
+        if (!text) return "";
+        let start = currentIndex;
+        let end = currentIndex;
 
-    const rawWord = text.slice(start, end);
-    const word = rawWord.trim();
+        // Find start of word
+        while (start > 0 && /\S/.test(text[start - 1])) {
+            start--;
+        }
 
-    if (!word) return <span className="w-full text-center text-zinc-600 text-lg font-sans">...</span>;
+        // Find end of word
+        while (end < text.length && /\S/.test(text[end])) {
+            end++;
+        }
 
-    // 2. ORP Calculation (Standardized)
-    let orpIndex = 0;
-    const len = word.length;
-    if (len <= 1) orpIndex = 0;
-    else if (len <= 5) orpIndex = 1;
-    else if (len <= 9) orpIndex = 2;
-    else if (len <= 13) orpIndex = 3;
-    else orpIndex = 4;
+        return text.slice(start, end);
+    }, [text, currentIndex]);
 
-    if (orpIndex >= len) orpIndex = len - 1;
-
-    const leftPart = word.slice(0, orpIndex);
-    const orpChar = word[orpIndex];
-    const rightPart = word.slice(orpIndex + 1);
+    // Pivot calculation for RSVP (Optical Center)
+    const pivot = Math.floor(currentWord.length > 1 ? currentWord.length / 3 : 0);
+    const leftPart = currentWord.slice(0, pivot);
+    const centerChar = currentWord[pivot];
+    const rightPart = currentWord.slice(pivot + 1);
 
     return (
-        <div className="w-full h-full relative flex flex-col items-center justify-center">
-            {/* MARKER LINES */}
-            <div className="absolute top-0 bottom-0 left-1/2 w-0 border-l border-white/20 h-full z-0 flex flex-col justify-between py-2 pointer-events-none">
-                <div className="w-[1px] h-3 bg-white/60 -ml-[0.5px]" />
-                <div className="w-[1px] h-3 bg-white/60 -ml-[0.5px]" />
-            </div>
-
-            <div className="text-[42px] font-serif leading-none flex items-center z-10 w-full whitespace-nowrap">
-                <div className="flex w-full items-baseline justify-center">
-                    {/* Left Side (Align Right to Touch Center) */}
-                    <div className="flex-1 text-right">
-                        <span className="text-white">{leftPart}</span>
-                    </div>
-
-                    {/* ORP (Centered) */}
-                    <div className="w-[1ch] text-center text-red-500 font-bold shrink-0 mx-0">
-                        {orpChar}
-                    </div>
-
-                    {/* Right Side (Align Left to Touch Center) */}
-                    <div className="flex-1 text-left">
-                        <span className="text-white">{rightPart}</span>
-                    </div>
+        <div className="w-full h-full relative flex flex-col items-center justify-center overflow-hidden bg-black/20 rounded-xl p-6">
+            {/* 2D Avatar (Optional Background/Top) */}
+            {avatar && (
+                <div className={cn(
+                    "mb-6 w-16 h-16 rounded-full overflow-hidden border-2 transition-transform duration-200 shadow-lg",
+                    isSpeaking ? "scale-105 border-green-500 shadow-green-500/20" : "border-white/10"
+                )}>
+                    <img src={avatar} alt="Avatar" className="w-full h-full object-cover" />
                 </div>
+            )}
+
+            {/* RSVP Text Display */}
+            <div className="flex items-baseline text-4xl font-mono relative">
+                {/* Left Part */}
+                <div className="text-right text-zinc-500 blur-[0.5px]">
+                    {leftPart}
+                </div>
+
+                {/* Center Pivot (Highlighted) */}
+                <div className="font-bold text-white px-0.5 transform scale-110 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]">
+                    {centerChar}
+                </div>
+
+                {/* Right Part */}
+                <div className="text-left text-zinc-400">
+                    {rightPart}
+                </div>
+
+                {/* Focus Guides */}
+                <div className="absolute top-0 bottom-0 left-1/2 w-px bg-red-500/20 -translate-x-1/2 h-full -z-10" />
             </div>
+
+            {/* Speaking Indicator */}
+            <div className={cn(
+                "mt-4 w-1.5 h-1.5 rounded-full transition-colors",
+                isSpeaking ? "bg-green-500" : "bg-zinc-700"
+            )} />
         </div>
     );
 };
