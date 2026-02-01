@@ -278,7 +278,15 @@ export class VideoExporter {
             if (currentSample % (framesPerChunk * 5) === 0) await new Promise(r => setTimeout(r, 0));
         }
 
-        await writable.close();
+        console.log("[VideoExporter] Finalizing Muxer...");
+        muxer.finalize();
+
+        // Ensure stream is closed effectively
+        try {
+            await writable.close();
+        } catch (e) {
+            console.warn("Stream close warning:", e);
+        }
 
         // Cleanup Optimization
         staticBackground.close();
