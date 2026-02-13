@@ -144,8 +144,25 @@ export function cleanText(text: string): string {
     // Remove Unicode noise / Emoji
     clean = clean.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, '')
 
-    // Collapse multiple spaces
-    clean = clean.replace(/\s+/g, ' ').trim();
+    // Collapse multiple spaces on same line (but preserve newlines)
+    // First, normalize line breaks to \n
+    clean = clean.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    // Collapse multiple consecutive newlines to max 2 (preserve paragraph breaks)
+    clean = clean.replace(/\n{3,}/g, '\n\n');
+
+    // Collapse multiple spaces/tabs on same line
+    clean = clean.replace(/[ \t]+/g, ' ');
+
+    // Trim spaces at start/end of each line
+    clean = clean.split('\n').map(line => line.trim()).join('\n');
+
+    // Filter out rows that are purely whitespace, but preserve single empty lines for paragraphs
+    // We already collapsed \n{3,} to \n\n above, so this is just about not killing the \n\n we want.
+    // Instead of filtering out length > 0, we can just return the cleaned up string.
+
+    // Trim overall
+    clean = clean.trim();
 
     return clean;
 }

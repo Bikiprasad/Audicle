@@ -7,6 +7,7 @@ import { useSettings, type ReaderMode } from "../../hooks/useSettings"
 // import type { Voice } from "~lib/audio/types"
 import { Tooltip } from "./Tooltip"
 import { VoiceSelector } from "./VoiceSelector"
+import { SarvamVoiceSelector } from "./SarvamVoiceSelector"
 import { SpeedReaderDisplay } from "./SpeedReaderDisplay"
 import { ParagraphHighlighter } from "./ParagraphHighlighter"
 import { VideoExporter } from "~lib/video/VideoExporter"
@@ -106,7 +107,8 @@ export const Player = ({
 }: PlayerProps) => {
 
     // Video Export
-    const { videoQuality } = useSettings()
+    const settings = useSettings()
+    const { videoQuality, videoExportStyle, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, sarvamApiKey, isSarvamEnabled } = settings
     const [isExporting, setIsExporting] = useState(false)
     const [exportProgress, setExportProgress] = useState(0)
     const [isExportComplete, setIsExportComplete] = useState(false)
@@ -124,7 +126,7 @@ export const Player = ({
             // Validate Voice
             const currentVoiceFn = voices.find(v => v.id === voiceId)
             if (!currentVoiceFn || currentVoiceFn.provider === 'web-speech') {
-                alert("Video export is only available for Kokoro and ElevenLabs voices.")
+                alert("Video export is available for ElevenLabs, Kokoro, and Sarvam voices.")
                 return
             }
 
@@ -154,28 +156,28 @@ export const Player = ({
             setExportProgress(0)
 
             // Exporter
-            const exporter = new VideoExporter()
+            const exporter = new VideoExporter(videoExportStyle)
 
-            // Fetch Audio Blob URL
+            // Fetch Audio Blob URL via unified AudioService
+            const { audioService } = await import('~lib/audio/AudioService')
+
             let audioUrl = ""
-            if (currentVoiceFn.provider === 'kokoro') {
-                const response = await fetch(`http://localhost:8880/v1/audio/speech`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        input: text,
-                        voice: voiceId,
-                        model: 'kokoro',
-                        response_format: 'mp3'
-                    })
-                })
-                if (!response.ok) throw new Error("Failed to generate audio for video")
-                const blob = await response.blob()
+            try {
+                const blob = await audioService.generateAudioBlob(
+                    text,
+                    voiceId,
+                    playbackSpeed,
+                    apiKey,
+                    isElevenLabsEnabled,
+                    kokoroUrl,
+                    isKokoroEnabled,
+                    sarvamApiKey,
+                    isSarvamEnabled
+                )
                 audioUrl = URL.createObjectURL(blob)
-            } else {
-                alert("For this demo, only Kokoro Local voices are supported for video export.")
-                setIsExporting(false)
-                return
+            } catch (e) {
+                console.error("Audio generation failed for video export", e)
+                throw new Error("Unable to generate audio for video. Please ensure the provider is configured correctly.")
             }
 
             await exporter.export(
@@ -593,11 +595,18 @@ export const Player = ({
                 {/* Secondary Row: Voice Selector - Audio Mode Only */}
                 {readerMode === 'audio' && (
                     <div className="flex flex-col gap-4">
-                        <VoiceSelector
-                            voices={voices}
-                            currentVoiceId={voiceId}
-                            onVoiceSelect={onVoiceSelect}
-                        />
+                        {voiceId.startsWith('sarvam-') ? (
+                            <SarvamVoiceSelector
+                                currentVoiceId={voiceId}
+                                onVoiceSelect={onVoiceSelect}
+                            />
+                        ) : (
+                            <VoiceSelector
+                                voices={voices}
+                                currentVoiceId={voiceId}
+                                onVoiceSelect={onVoiceSelect}
+                            />
+                        )}
 
 
                     </div>

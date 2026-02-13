@@ -1,6 +1,7 @@
 import type { AudioProvider, PlayerEvent, Voice, WordBoundaryEvent } from "./types";
 import { WebSpeechProvider } from "./WebSpeechProvider";
 import { ElevenLabsProvider } from "./ElevenLabsProvider";
+import { SarvamProvider } from "./SarvamProvider";
 import { KokoroProvider } from "./KokoroProvider";
 import { AnalyticsService } from "~hooks/useAnalytics";
 
@@ -9,7 +10,7 @@ type EventHandler = (data?: any) => void;
 class AudioService {
     private provider: AudioProvider;
     private listeners: Map<PlayerEvent, Set<EventHandler>> = new Map();
-    private currentProviderName: 'web-speech' | 'elevenlabs' | 'kokoro' = 'web-speech';
+    private currentProviderName: 'web-speech' | 'elevenlabs' | 'kokoro' | 'sarvam' = 'web-speech';
 
     // Centralized State Cache
     private _playbackRate: number = 1;
@@ -52,11 +53,13 @@ class AudioService {
     }
 
     // --- Provider Management ---
-    private ensureProvider(apiKey?: string, isElevenLabsEnabled: boolean = true, kokoroUrl?: string, isKokoroEnabled: boolean = false, targetVoiceId?: string) {
+    private ensureProvider(apiKey?: string, isElevenLabsEnabled: boolean = true, kokoroUrl?: string, isKokoroEnabled: boolean = false, sarvamApiKey?: string, isSarvamEnabled: boolean = false, targetVoiceId?: string) {
         // Determine target provider
-        let target: 'web-speech' | 'elevenlabs' | 'kokoro' = 'web-speech';
+        let target: 'web-speech' | 'elevenlabs' | 'kokoro' | 'sarvam' = 'web-speech';
 
-        if (isKokoroEnabled && kokoroUrl) {
+        if (isSarvamEnabled && sarvamApiKey && targetVoiceId?.startsWith('sarvam-')) {
+            target = 'sarvam';
+        } else if (isKokoroEnabled && kokoroUrl) {
             // Priority to Kokoro if enabled? Or only if voice matches?
             // For now, if voiceId is known to be Kokoro (we can guess by ID format or pass generic)
             // But usually we want:
@@ -105,6 +108,8 @@ class AudioService {
             }
         } else if (isElevenLabsEnabled && apiKey) {
             target = 'elevenlabs';
+        } else if (isSarvamEnabled && sarvamApiKey) {
+            target = 'sarvam';
         }
 
         // Force switch if needed
@@ -116,6 +121,8 @@ class AudioService {
                 this.provider = new KokoroProvider(kokoroUrl);
             } else if (target === 'elevenlabs' && apiKey) {
                 this.provider = new ElevenLabsProvider(apiKey);
+            } else if (target === 'sarvam' && sarvamApiKey) {
+                this.provider = new SarvamProvider(sarvamApiKey);
             } else {
                 this.provider = new WebSpeechProvider();
             }
@@ -131,13 +138,18 @@ class AudioService {
                     this.provider = new ElevenLabsProvider(apiKey!);
                     this.bindProviderEvents(this.provider);
                 }
+            } else if (target === 'sarvam' && this.provider instanceof SarvamProvider) {
+                if (!this.provider.hasKey(sarvamApiKey!)) {
+                    this.provider = new SarvamProvider(sarvamApiKey!);
+                    this.bindProviderEvents(this.provider);
+                }
             }
         }
     }
 
     // --- Public API ---
 
-    async getVoices(apiKey?: string, isElevenLabsEnabled: boolean = true, kokoroUrl?: string, isKokoroEnabled: boolean = false): Promise<Voice[]> {
+    async getVoices(apiKey?: string, isElevenLabsEnabled: boolean = true, kokoroUrl?: string, isKokoroEnabled: boolean = false, sarvamApiKey?: string, isSarvamEnabled: boolean = false): Promise<Voice[]> {
         const promises: Promise<Voice[]>[] = [];
 
         // 1. Web Speech (Always available)
@@ -153,14 +165,20 @@ class AudioService {
             promises.push(new KokoroProvider(kokoroUrl).getVoices());
         }
 
+        // 4. Sarvam
+        if (isSarvamEnabled && sarvamApiKey) {
+            promises.push(new SarvamProvider(sarvamApiKey).getVoices());
+        }
+
         const results = await Promise.all(promises);
         const allVoices = results.flat();
 
         // Sort: ElevenLabs > Kokoro > Web Speech
         const providerPriority = {
             'elevenlabs': 0,
-            'kokoro': 1,
-            'web-speech': 2
+            'sarvam': 1,
+            'kokoro': 2,
+            'web-speech': 3
         };
 
         return allVoices.sort((a, b) => {
@@ -170,8 +188,8 @@ class AudioService {
         });
     }
 
-    async play(text: string, voiceId: string, speed: number, apiKey?: string, isElevenLabsEnabled: boolean = true, kokoroUrl?: string, isKokoroEnabled: boolean = false): Promise<void> {
-        this.ensureProvider(apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, voiceId);
+    async play(text: string, voiceId: string, speed: number, apiKey?: string, isElevenLabsEnabled: boolean = true, kokoroUrl?: string, isKokoroEnabled: boolean = false, sarvamApiKey?: string, isSarvamEnabled: boolean = false): Promise<void> {
+        this.ensureProvider(apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, sarvamApiKey, isSarvamEnabled, voiceId);
 
         // Analytics Tracking
         try {
@@ -238,6 +256,25 @@ class AudioService {
 
     getPlaybackRate(): number {
         return this._playbackRate;
+    }
+
+    async generateAudioBlob(
+        text: string,
+        voiceId: string,
+        speed: number,
+        apiKey?: string,
+        isElevenLabsEnabled: boolean = true,
+        kokoroUrl?: string,
+        isKokoroEnabled: boolean = false,
+        sarvamApiKey?: string,
+        isSarvamEnabled: boolean = false
+    ): Promise<Blob> {
+        this.ensureProvider(apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, sarvamApiKey, isSarvamEnabled, voiceId);
+
+        if (this.provider.generateAudioBlob) {
+            return this.provider.generateAudioBlob(text, voiceId, speed);
+        }
+        throw new Error("Audio generation not supported by current provider");
     }
 
     async download(text: string, voiceId: string): Promise<void> {

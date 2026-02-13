@@ -1157,7 +1157,7 @@ const LibraryView = () => {
 }
 
 const SettingsView = () => {
-    const { apiKey, kokoroUrl, isKokoroEnabled, isElevenLabsEnabled, videoQuality, setVideoQuality, setApiKey, setKokoroUrl, setIsKokoroEnabled, setIsElevenLabsEnabled } = useSettings()
+    const { apiKey, kokoroUrl, isKokoroEnabled, isElevenLabsEnabled, sarvamApiKey, isSarvamEnabled, videoQuality, setVideoQuality, videoExportStyle, setVideoExportStyle, setApiKey, setKokoroUrl, setIsKokoroEnabled, setIsElevenLabsEnabled, setSarvamApiKey, setIsSarvamEnabled } = useSettings()
 
     return (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-2xl space-y-6">
@@ -1225,6 +1225,38 @@ const SettingsView = () => {
                 </AnimatePresence>
             </div>
 
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 dark:bg-zinc-900/50 dark:border-white/5 dark:shadow-none">
+                <div className="flex items-center gap-4 mb-6">
+                    <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">
+                        <Mic size={20} />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-white">Sarvam AI (Indian Voices)</h3>
+                        <p className="text-sm text-gray-500 dark:text-zinc-500">Native Indian language synthesis via API.</p>
+                    </div>
+                    <div className="ml-auto">
+                        <Toggle checked={isSarvamEnabled} onChange={() => setIsSarvamEnabled(!isSarvamEnabled)} activeColor="bg-orange-600" />
+                    </div>
+                </div>
+
+                <AnimatePresence>
+                    {isSarvamEnabled && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                            <div className="pt-4 border-t border-gray-50 dark:border-white/5">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block dark:text-zinc-500">API Key</label>
+                                <input
+                                    type="password"
+                                    value={sarvamApiKey || ""}
+                                    onChange={(e) => setSarvamApiKey(e.target.value)}
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all dark:bg-black/40 dark:border-white/10 dark:text-zinc-300 dark:focus:border-orange-500/30"
+                                    placeholder="Enter Sarvam API Key..."
+                                />
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+
 
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 dark:bg-zinc-900/50 dark:border-white/5 dark:shadow-none">
                 <div className="flex items-center gap-4 mb-6">
@@ -1265,6 +1297,253 @@ const SettingsView = () => {
                     >
                         <span className="font-bold">1080p Full HD</span>
                         {videoQuality === '1080p' && <div className="w-2 h-2 rounded-full bg-white dark:bg-black" />}
+                    </button>
+                </div>
+            </div>
+
+            {/* Video Export Style */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 dark:bg-zinc-900/50 dark:border-white/5 dark:shadow-none">
+                <div className="flex items-center gap-4 mb-6">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Video Export Style</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Choose your video aesthetic</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                    {/* Noir Minimal */}
+                    <button
+                        onClick={() => setVideoExportStyle('noir-minimal')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'noir-minimal'
+                                ? "border-slate-400"
+                                : "border-gray-200 hover:border-slate-300 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-[#0A0A0A]" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-white">Noir Minimal</div>
+                                {videoExportStyle === 'noir-minimal' && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                            <div className="text-[10px] text-white/50 uppercase tracking-widest font-bold">Linear Aesthetic</div>
+                        </div>
+                    </button>
+
+                    {/* Solar Light */}
+                    <button
+                        onClick={() => setVideoExportStyle('solar-light')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'solar-light'
+                                ? "border-amber-200"
+                                : "border-gray-200 hover:border-amber-100 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-x-0.5 inset-y-0.5 bg-[#F9F8F3] rounded-lg border border-black/5" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-slate-900">Solar Light</div>
+                                {videoExportStyle === 'solar-light' && <div className="w-2 h-2 rounded-full bg-slate-900" />}
+                            </div>
+                            <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Classy Editorial</div>
+                        </div>
+                    </button>
+
+                    {/* Arctic Glass */}
+                    <button
+                        onClick={() => setVideoExportStyle('arctic-glass')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'arctic-glass'
+                                ? "border-blue-400"
+                                : "border-gray-200 hover:border-blue-300 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-blue-100 to-blue-200" />
+                        <div className="absolute inset-2 bg-white/30 backdrop-blur-md rounded-lg border border-white/50" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-blue-900">Arctic Glass</div>
+                                {videoExportStyle === 'arctic-glass' && <div className="w-2 h-2 rounded-full bg-blue-600" />}
+                            </div>
+                            <div className="text-[10px] text-blue-800/60 uppercase tracking-widest font-bold">Soft Glassmorphism</div>
+                        </div>
+                    </button>
+
+                    {/* Obsidian Mesh */}
+                    <button
+                        onClick={() => setVideoExportStyle('obsidian-mesh')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'obsidian-mesh'
+                                ? "border-sky-500 shadow-[0_0_15px_rgba(56,189,248,0.2)]"
+                                : "border-gray-200 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-[#020617]" />
+                        <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(56,189,248,0.2)_1px,transparent_1px),linear-gradient(90deg,rgba(56,189,248,0.2)_1px,transparent_1px)] bg-[size:12px_12px] rotate-45 scale-150" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-sky-400">Obsidian Mesh</div>
+                                {videoExportStyle === 'obsidian-mesh' && <div className="w-2 h-2 rounded-full bg-sky-400" />}
+                            </div>
+                            <div className="text-[10px] text-sky-700 uppercase tracking-widest font-bold">Tech Sophistication</div>
+                        </div>
+                    </button>
+
+                    {/* Studio Carbon */}
+                    <button
+                        onClick={() => setVideoExportStyle('studio-carbon')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'studio-carbon'
+                                ? "border-zinc-500"
+                                : "border-gray-200 hover:border-zinc-400 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-[#18181B]" />
+                        <div className="absolute bottom-2 right-2 w-8 h-8 rounded-full border border-green-500/20" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-zinc-100">Studio Carbon</div>
+                                {videoExportStyle === 'studio-carbon' && <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]" />}
+                            </div>
+                            <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Pro Master Suite</div>
+                        </div>
+                    </button>
+
+                    {/* Modern Serif */}
+                    <button
+                        onClick={() => setVideoExportStyle('modern-serif')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'modern-serif'
+                                ? "border-stone-800"
+                                : "border-gray-200 hover:border-stone-300 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-[#FFFBF7]" />
+                        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle,black_0.5px,transparent_0.5px)] bg-[size:8px_8px]" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-stone-900 italic serif">Modern Serif</div>
+                                {videoExportStyle === 'modern-serif' && <div className="w-2 h-2 rounded-full bg-stone-800" />}
+                            </div>
+                            <div className="text-[10px] text-stone-400 uppercase tracking-widest font-bold">Editorial Chic</div>
+                        </div>
+                    </button>
+
+                    {/* Bento Slate */}
+                    <button
+                        onClick={() => setVideoExportStyle('bento-slate')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'bento-slate'
+                                ? "border-slate-400"
+                                : "border-gray-200 hover:border-slate-300 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-[#F1F5F9]" />
+                        <div className="absolute inset-2 bg-white rounded-xl border border-black/5" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-slate-800">Bento Slate</div>
+                                {videoExportStyle === 'bento-slate' && <div className="w-2 h-2 rounded-full bg-slate-800" />}
+                            </div>
+                            <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Structured Minimal</div>
+                        </div>
+                    </button>
+
+                    {/* Indigo Aurora */}
+                    <button
+                        onClick={() => setVideoExportStyle('indigo-aurora')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'indigo-aurora'
+                                ? "border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]"
+                                : "border-gray-200 hover:border-indigo-300 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-white">Indigo Aurora</div>
+                                {videoExportStyle === 'indigo-aurora' && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                            <div className="text-[10px] text-indigo-400/80 uppercase tracking-widest font-bold">Deep & Vibrant</div>
+                        </div>
+                    </button>
+
+                    {/* Halftone Lava (Elite) */}
+                    <button
+                        onClick={() => setVideoExportStyle('halftone-lava')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'halftone-lava'
+                                ? "border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]"
+                                : "border-gray-200 hover:border-red-300 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-[#0A0000]" />
+                        <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle,rgba(239,68,68,0.5)_2px,transparent_2px)] bg-[size:10px_10px]" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-red-500">Halftone Lava</div>
+                                {videoExportStyle === 'halftone-lava' && <div className="w-2 h-2 rounded-full bg-red-500" />}
+                            </div>
+                            <div className="text-[10px] text-red-900/80 uppercase tracking-widest font-bold">Organic Waves</div>
+                        </div>
+                    </button>
+
+                    {/* Technical HUD (Elite) */}
+                    <button
+                        onClick={() => setVideoExportStyle('technical-hud')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'technical-hud'
+                                ? "border-blue-400"
+                                : "border-gray-200 hover:border-blue-300 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-[#020617]" />
+                        <div className="absolute inset-2 border border-blue-500/20 rounded flex items-center justify-center">
+                            <div className="w-8 h-8 rounded-full border border-blue-500/40 border-dashed animate-spin-slow" />
+                        </div>
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-blue-300">Technical HUD</div>
+                                {videoExportStyle === 'technical-hud' && <div className="w-2 h-2 rounded-full bg-blue-400" />}
+                            </div>
+                            <div className="text-[10px] text-blue-500/80 uppercase tracking-widest font-bold">Command Center</div>
+                        </div>
+                    </button>
+
+                    {/* Matrix Blue (Elite) */}
+                    <button
+                        onClick={() => setVideoExportStyle('matrix-blue')}
+                        className={cn(
+                            "relative p-4 rounded-xl border-2 transition-all duration-200 text-left overflow-hidden h-24",
+                            videoExportStyle === 'matrix-blue'
+                                ? "border-sky-400"
+                                : "border-gray-200 hover:border-sky-300 dark:border-white/10 dark:hover:border-white/20"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-slate-950" />
+                        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle,#38bdf8_0.5px,transparent_0.5px)] bg-[size:6px_6px]" />
+                        <div className="relative h-full flex flex-col justify-between">
+                            <div className="flex items-start justify-between">
+                                <div className="font-semibold text-sm text-sky-100">Matrix Blue</div>
+                                {videoExportStyle === 'matrix-blue' && <div className="w-2 h-2 rounded-full bg-sky-400" />}
+                            </div>
+                            <div className="text-[10px] text-sky-800 uppercase tracking-widest font-bold">Deep Density</div>
+                        </div>
                     </button>
                 </div>
             </div>

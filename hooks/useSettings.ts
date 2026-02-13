@@ -14,8 +14,11 @@ export interface Settings {
     // Kokoro Settings
     kokoroUrl?: string
     isKokoroEnabled?: boolean
+    sarvamApiKey: string
+    isSarvamEnabled?: boolean
     isPro?: boolean // Pro Tier Flag
     videoQuality: '720p' | '1080p'
+    videoExportStyle: string // Video export aesthetic style
     theme?: Theme
 
 }
@@ -29,9 +32,12 @@ const DEFAULT_SETTINGS: Settings = {
     speedReaderWpm: 400,
     kokoroUrl: "http://localhost:8880", // Default assumption
     isKokoroEnabled: false,
+    sarvamApiKey: "",
+    isSarvamEnabled: false,
     isPro: true, // Default Enabled for Testing
-    videoQuality: '720p',
-    theme: 'dark', // Default to dark for now
+    videoQuality: '720p' as '720p' | '1080p',
+    videoExportStyle: 'noir-minimal', // Default to Noir Minimal
+    theme: 'dark' as Theme, // Default to dark for now
 
 }
 
@@ -106,10 +112,16 @@ export const useSettings = () => {
         setIsElevenLabsEnabled: (enabled: boolean) => updateSettings({ isElevenLabsEnabled: enabled }),
         setKokoroUrl: (url: string) => updateSettings({ kokoroUrl: url }),
         setIsKokoroEnabled: (enabled: boolean) => updateSettings({ isKokoroEnabled: enabled }),
+        sarvamApiKey: settings.sarvamApiKey || "",
+        isSarvamEnabled: settings.isSarvamEnabled || false,
+        setSarvamApiKey: (key: string) => updateSettings({ sarvamApiKey: key }),
+        setIsSarvamEnabled: (enabled: boolean) => updateSettings({ isSarvamEnabled: enabled }),
         isPro: settings.isPro ?? true,
         theme: settings.theme || 'dark',
         setTheme: (theme: Theme) => updateSettings({ theme }),
         videoQuality: settings.videoQuality || '720p',
-        setVideoQuality: (q: '720p' | '1080p') => updateSettings({ videoQuality: q })
+        setVideoQuality: (q: '720p' | '1080p') => updateSettings({ videoQuality: q }),
+        videoExportStyle: settings.videoExportStyle || 'pure-minimalist',
+        setVideoExportStyle: (style: string) => updateSettings({ videoExportStyle: style })
     }
 }

@@ -91,10 +91,12 @@ export const VoiceSelector = ({ voices, currentVoiceId, onVoiceSelect, disabled 
                                                     "text-[9px] px-1.5 py-0.5 rounded-[4px] uppercase font-bold tracking-wider opacity-80",
                                                     v.provider === 'web-speech' ? "bg-zinc-800 text-zinc-400" :
                                                         v.provider === 'elevenlabs' ? "bg-blue-900/30 text-blue-300 border border-blue-500/20" :
-                                                            "bg-orange-900/30 text-orange-300 border border-orange-500/20" // Kokoro
+                                                            v.provider === 'sarvam' ? "bg-indigo-900/30 text-indigo-300 border border-indigo-500/20" :
+                                                                "bg-orange-900/30 text-orange-300 border border-orange-500/20" // Kokoro
                                                 )}>
                                                     {v.provider === 'web-speech' ? 'Web Speech' :
-                                                        v.provider === 'elevenlabs' ? 'Elevenlabs' : 'Kokoro TTS'}
+                                                        v.provider === 'elevenlabs' ? 'Elevenlabs' :
+                                                            v.provider === 'sarvam' ? 'Sarvam AI' : 'Kokoro TTS'}
                                                 </span>
 
                                                 {currentVoiceId === v.id && (

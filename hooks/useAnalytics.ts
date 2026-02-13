@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 
 export interface HistoryItem {
     timestamp: string // ISO Date String
-    model: 'kokoro' | 'elevenlabs' | 'webspeech'
+    model: 'kokoro' | 'elevenlabs' | 'webspeech' | 'sarvam'
     chars: number
 }
 
@@ -12,6 +12,7 @@ export interface AnalyticsData {
         kokoro: number
         elevenlabs: number
         webspeech: number
+        sarvam: number
     }
     history: HistoryItem[]
 }
@@ -21,7 +22,8 @@ const DEFAULT_DATA: AnalyticsData = {
     byModel: {
         kokoro: 0,
         elevenlabs: 0,
-        webspeech: 0
+        webspeech: 0,
+        sarvam: 0
     },
     history: []
 }
@@ -127,7 +129,7 @@ export const useAnalytics = () => {
 }
 
 export const AnalyticsService = {
-    trackUsage: async (model: 'kokoro' | 'elevenlabs' | 'webspeech', chars: number) => {
+    trackUsage: async (model: 'kokoro' | 'elevenlabs' | 'webspeech' | 'sarvam', chars: number) => {
         console.log(`[Analytics] Tracking usage: ${model} +${chars} chars`);
 
         // Get current (promisified chrome.storage)

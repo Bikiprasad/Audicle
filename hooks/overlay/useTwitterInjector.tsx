@@ -109,18 +109,38 @@ export const useTwitterInjector = (
                                 imgUrl = (photos[0] as HTMLImageElement).src
                             }
 
-                            // Clone and Clean extraction...
-                            const clone = article.cloneNode(true) as Element
-                            clone.querySelectorAll('[data-testid="User-Name"], [data-testid="socialContext"], [role="group"], time, [data-testid="card.wrapper"]').forEach(el => el.remove())
-                            clone.querySelectorAll('div[role="link"]').forEach(el => {
-                                if (el.querySelector('[data-testid="tweetText"]') || el.querySelector('[data-testid="User-Name"]')) {
-                                    el.remove();
-                                }
-                            });
+                            // Clone and Clean extraction - SIMPLIFIED APPROACH
+                            const clone = article.cloneNode(true) as HTMLElement
 
-                            let extractedText = ""
-                            const clonedTweetText = clone.querySelector('[data-testid="tweetText"]')
-                            extractedText = clonedTweetText ? clonedTweetText.textContent || "" : (clone as HTMLElement).innerText
+                            // 1. Remove UI noise elements
+                            clone.querySelectorAll(`
+                                [data-testid="User-Name"], 
+                                [data-testid="socialContext"], 
+                                [role="group"], 
+                                time, 
+                                [data-testid="card.wrapper"],
+                                [data-testid="placementTracking"],
+                                [aria-label*="Subscribe"],
+                                [role="button"]
+                            `).forEach(el => el.remove())
+
+                            let extractedText = "";
+                            const tweetTextEl = clone.querySelector('[data-testid="tweetText"]') as HTMLElement;
+
+                            // 2. Simple extraction - use innerText which handles spacing naturally
+                            if (tweetTextEl) {
+                                extractedText = tweetTextEl.innerText;
+                            } else {
+                                extractedText = clone.innerText;
+                            }
+
+                            // 3. Minimal cleanup - only remove obvious UI noise
+                            extractedText = extractedText
+                                .replace(/^.*?@\w+\s*\n/i, '') // Remove author line if at start
+                                .replace(/Subscribe\s*\n/gi, '')
+                                .replace(/[·•]\s*\d+([.,]\d+)?\s*[MK]?\s*Views/gi, '')
+                                .replace(/The full version of this post is available here\.?/gi, '');
+
                             extractedText = cleanText(extractedText);
 
                             // URL Logic

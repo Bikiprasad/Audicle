@@ -6,28 +6,32 @@ import { AudicleIcon } from "~lib/icons"
 import { cn } from "~lib/utils"
 import "./style.css"
 
-type AudioProviderType = 'webspeech' | 'elevenlabs' | 'kokoro';
+type AudioProviderType = 'webspeech' | 'elevenlabs' | 'kokoro' | 'sarvam';
 
 function IndexPopup() {
-  const { apiKey, showOverlay, isElevenLabsEnabled, readerMode, kokoroUrl, isKokoroEnabled, setApiKey, setShowOverlay, setIsElevenLabsEnabled, setReaderMode, setKokoroUrl, setIsKokoroEnabled, theme, setTheme } = useSettings()
+  const { apiKey, showOverlay, isElevenLabsEnabled, readerMode, kokoroUrl, isKokoroEnabled, sarvamApiKey, isSarvamEnabled, setApiKey, setShowOverlay, setIsElevenLabsEnabled, setReaderMode, setKokoroUrl, setIsKokoroEnabled, setSarvamApiKey, setIsSarvamEnabled, theme, setTheme } = useSettings()
   const [localKey, setLocalKey] = useState("")
   const [localKokoroUrl, setLocalKokoroUrl] = useState("")
+  const [localSarvamKey, setLocalSarvamKey] = useState("")
   const [isSaved, setIsSaved] = useState(false)
   const [activeProvider, setActiveProvider] = useState<AudioProviderType>('webspeech')
 
   useEffect(() => {
     if (apiKey) setLocalKey(apiKey)
     if (kokoroUrl) setLocalKokoroUrl(kokoroUrl)
+    if (sarvamApiKey) setLocalSarvamKey(sarvamApiKey)
 
     // Determine active provider based on flags
-    if (isKokoroEnabled) {
+    if (isSarvamEnabled) {
+      setActiveProvider('sarvam')
+    } else if (isKokoroEnabled) {
       setActiveProvider('kokoro')
     } else if (isElevenLabsEnabled) {
       setActiveProvider('elevenlabs')
     } else {
       setActiveProvider('webspeech')
     }
-  }, [apiKey, kokoroUrl, isKokoroEnabled, isElevenLabsEnabled])
+  }, [apiKey, kokoroUrl, sarvamApiKey, isKokoroEnabled, isElevenLabsEnabled, isSarvamEnabled])
 
   // Apply Theme Class
   useEffect(() => {
@@ -42,17 +46,25 @@ function IndexPopup() {
   const handleSave = () => {
     setApiKey(localKey)
     setKokoroUrl(localKokoroUrl)
+    setSarvamApiKey(localSarvamKey)
 
     // Save provider state
-    if (activeProvider === 'kokoro') {
+    if (activeProvider === 'sarvam') {
+      setIsSarvamEnabled(true)
+      setIsKokoroEnabled(false)
+      setIsElevenLabsEnabled(false)
+    } else if (activeProvider === 'kokoro') {
       setIsKokoroEnabled(true)
       setIsElevenLabsEnabled(false)
+      setIsSarvamEnabled(false)
     } else if (activeProvider === 'elevenlabs') {
       setIsKokoroEnabled(false)
       setIsElevenLabsEnabled(true)
+      setIsSarvamEnabled(false)
     } else {
       setIsKokoroEnabled(false)
       setIsElevenLabsEnabled(false)
+      setIsSarvamEnabled(false)
     }
 
     setIsSaved(true)
@@ -174,7 +186,7 @@ function IndexPopup() {
             <div className="p-3 space-y-4">
               <div className="space-y-2">
                 <label className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest ml-1">Audio Engine</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   <button
                     onClick={() => setActiveProvider('webspeech')}
                     className={cn(
@@ -213,6 +225,19 @@ function IndexPopup() {
                     <Zap size={16} />
                     <span className="text-[9px] font-bold">Premium</span>
                   </button>
+
+                  <button
+                    onClick={() => setActiveProvider('sarvam')}
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-2 py-3 rounded-xl border transition-all duration-300",
+                      activeProvider === 'sarvam'
+                        ? "bg-indigo-50 border-indigo-200 text-indigo-600 shadow-sm dark:bg-indigo-500/10 dark:border-indigo-500/50 dark:text-indigo-400 dark:shadow-[0_0_15px_-3px_rgba(99,102,241,0.3)]"
+                        : "bg-white border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:bg-zinc-800/50 dark:border-white/5 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:border-white/10"
+                    )}
+                  >
+                    <Globe size={16} />
+                    <span className="text-[9px] font-bold">Sarvam</span>
+                  </button>
                 </div>
               </div>
 
@@ -246,6 +271,22 @@ function IndexPopup() {
                       onChange={(e) => setLocalKokoroUrl(e.target.value)}
                       placeholder="http://localhost:8880"
                       className="w-full rounded-lg px-3 py-2.5 text-[11px] font-mono transition-all focus:outline-none bg-white border border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 dark:bg-black/40 dark:border-white/10 dark:text-zinc-300 dark:placeholder:text-zinc-700 dark:focus:border-orange-500/50 dark:focus:bg-black/60 dark:focus:ring-0"
+                    />
+                  </div>
+                )}
+
+                {activeProvider === 'sarvam' && (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                    <label className="flex items-center gap-2 text-[9px] font-mono text-zinc-500 uppercase tracking-widest pl-1">
+                      <Globe size={10} className="text-indigo-500" />
+                      Sarvam API Key
+                    </label>
+                    <input
+                      type="password"
+                      value={localSarvamKey}
+                      onChange={(e) => setLocalSarvamKey(e.target.value)}
+                      placeholder="Enter Sarvam key..."
+                      className="w-full rounded-lg px-3 py-2.5 text-[11px] font-mono transition-all focus:outline-none bg-white border border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:bg-black/40 dark:border-white/10 dark:text-zinc-300 dark:placeholder:text-zinc-700 dark:focus:border-indigo-500/50 dark:focus:bg-black/60 dark:focus:ring-0"
                     />
                   </div>
                 )}

@@ -59,9 +59,9 @@ export const useAudio = () => {
     }, []);
 
     // Wrapper Methods
-    const play = useCallback((text: string, voiceId: string, speed: number, apiKey?: string, isElevenLabsEnabled?: boolean, kokoroUrl?: string, isKokoroEnabled?: boolean) => {
+    const play = useCallback((text: string, voiceId: string, speed: number, apiKey?: string, isElevenLabsEnabled?: boolean, kokoroUrl?: string, isKokoroEnabled?: boolean, sarvamApiKey?: string, isSarvamEnabled?: boolean) => {
         setError(null);
-        return audioService.play(text, voiceId, speed, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled);
+        return audioService.play(text, voiceId, speed, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, sarvamApiKey, isSarvamEnabled);
     }, []);
 
     const pause = useCallback(() => audioService.pause(), []);

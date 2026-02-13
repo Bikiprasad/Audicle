@@ -348,25 +348,7 @@ export class ElevenLabsProvider implements AudioProvider {
 
     async download(text: string, voiceId: string): Promise<void> {
         try {
-            const response = await fetch(
-                `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-                {
-                    method: "POST",
-                    headers: {
-                        "xi-api-key": this.apiKey,
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        text: text,
-                        model_id: "eleven_multilingual_v2",
-                        output_format: "mp3_44100_128",
-                    }),
-                }
-            );
-
-            if (!response.ok) throw new Error("Download failed");
-
-            const blob = await response.blob();
+            const blob = await this.generateAudioBlob(text, voiceId, 1.0);
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.style.display = 'none';
@@ -380,6 +362,37 @@ export class ElevenLabsProvider implements AudioProvider {
             console.error("Download error", e);
             throw e;
         }
+    }
+
+    async generateAudioBlob(text: string, voiceId: string, speed: number): Promise<Blob> {
+        if (!this.apiKey) throw new Error("API Key missing");
+
+        const chunks = this.splitTextSmartly(text, 4000);
+        const audioBuffers: ArrayBuffer[] = [];
+
+        for (const chunk of chunks) {
+            const response = await fetch(
+                `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+                {
+                    method: "POST",
+                    headers: {
+                        "xi-api-key": this.apiKey,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        text: chunk,
+                        model_id: "eleven_multilingual_v2",
+                        output_format: "mp3_44100_128",
+                    }),
+                }
+            );
+
+            if (!response.ok) throw new Error(`ElevenLabs generation failed: ${response.statusText}`);
+            const buffer = await response.arrayBuffer();
+            audioBuffers.push(buffer);
+        }
+
+        return new Blob(audioBuffers, { type: 'audio/mpeg' });
     }
 
     private splitTextSmartly(text: string, limit: number): string[] {

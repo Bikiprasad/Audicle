@@ -41,7 +41,7 @@ export const getStyle = () => {
 }
 
 function Overlay() {
-    const { apiKey, voiceId, playbackSpeed, showOverlay, isElevenLabsEnabled, readerMode, speedReaderWpm, kokoroUrl, isKokoroEnabled, isPro, setVoiceId, setShowOverlay, setPlaybackSpeed, setSpeedReaderWpm } = useSettings()
+    const { apiKey, voiceId, playbackSpeed, showOverlay, isElevenLabsEnabled, readerMode, speedReaderWpm, kokoroUrl, isKokoroEnabled, sarvamApiKey, isSarvamEnabled, isPro, setVoiceId, setShowOverlay, setPlaybackSpeed, setSpeedReaderWpm } = useSettings()
     const { uiState, text, sourceUrl, generationProgress, setUiState, setText, setSourceUrl, setGenerationProgress, reset } = usePlayerStore()
     const { addArticle, removeArticle, isSaved, articles } = useReadingList()
 
@@ -75,7 +75,7 @@ function Overlay() {
     // --- Helper: Load Voices ---
     const loadVoices = async () => {
         try {
-            const list = await audioService.getVoices(apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled)
+            const list = await audioService.getVoices(apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, sarvamApiKey, isSarvamEnabled)
             setVoices(list)
         } catch (e) {
             console.error(e)
@@ -90,7 +90,7 @@ function Overlay() {
             const meta = scrapeMetadata()
             setMetadata(meta)
         }
-    }, [showOverlay, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, readerMode])
+    }, [showOverlay, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, sarvamApiKey, isSarvamEnabled, readerMode])
 
     // Close Editor when state changes from editing
     useEffect(() => {
@@ -210,7 +210,7 @@ function Overlay() {
             });
             setUiState("ready")
 
-            await audio.play(text, voiceId, playbackSpeed, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled);
+            await audio.play(text, voiceId, playbackSpeed, apiKey, isElevenLabsEnabled, kokoroUrl, isKokoroEnabled, sarvamApiKey, isSarvamEnabled);
 
             // Note: Hook will update isPlaying. We don't need manual setIsPlaying here.
             console.log("Overlay: Playback started");

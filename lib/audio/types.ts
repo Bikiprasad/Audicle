@@ -1,7 +1,7 @@
 export interface Voice {
     id: string;
     name: string;
-    provider: 'web-speech' | 'elevenlabs' | 'kokoro';
+    provider: 'web-speech' | 'elevenlabs' | 'kokoro' | 'sarvam';
     nativeVoiceObj?: any; // For WebSpeech
     description?: string;
 }
@@ -28,6 +28,7 @@ export interface AudioProvider {
     getDuration(): number;
     isPlaying?: boolean | (() => boolean); // Optional for now
     download?(text: string, voiceId: string): Promise<void>;
+    generateAudioBlob?(text: string, voiceId: string, speed: number): Promise<Blob>;
 }
 
 export type PlayerEvent =

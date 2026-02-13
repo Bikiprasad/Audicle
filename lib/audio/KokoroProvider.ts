@@ -362,6 +362,36 @@ export class KokoroProvider implements AudioProvider {
 
     private estimatedDuration: number = 0;
 
+    async generateAudioBlob(text: string, voiceId: string, speed: number): Promise<Blob> {
+        try {
+            const payload = {
+                input: text,
+                voice: voiceId,
+                model: "kokoro",
+                response_format: "mp3",
+                speed: speed
+            };
+
+            const response = await fetch(`${this.baseUrl}/v1/audio/speech`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Kokoro generation failed: ${response.status} - ${errorText}`);
+            }
+
+            return await response.blob();
+        } catch (e) {
+            console.error("Kokoro generateAudioBlob failed", e);
+            throw e;
+        }
+    }
+
     async download(text: string, voiceId: string): Promise<void> {
         try {
             const payload = {
