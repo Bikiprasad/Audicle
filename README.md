@@ -95,6 +95,7 @@ graph TD
 
     subgraph Cloud
         EL[ElevenLabs API]
+        Bulbul V3 for Indian Languages[Sarvam AI API]
     end
 
     Content -->|Scrapes Text| Bg
